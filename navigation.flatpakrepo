@@ -1,0 +1,7 @@
+[Flatpak Repo]
+Title=Navigation
+Url=https://isyourbrainfoss.github.io/navigation/repo
+Homepage=https://github.com/isyourbrainfoss/navigation
+Comment=Community Flatpak builds of Navigation
+Description=Simple multi-platform OSM navigation for Linux desktop and mobile
+RuntimeRepo=https://dl.flathub.org/repo/flathub.flatpakrepo
