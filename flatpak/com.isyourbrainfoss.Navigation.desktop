@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Navigation
+Comment=Simple maps and walk/drive navigation
+Exec=navigation
+Icon=com.isyourbrainfoss.Navigation
+Terminal=false
+Type=Application
+Categories=Maps;Navigation;Geography;
+StartupWMClass=navigation
+Keywords=maps;gps;navigation;osm;routing;
