@@ -1,10 +1,12 @@
 [Desktop Entry]
 Name=Navigation
-Comment=Simple maps and walk/drive navigation
-Exec=navigation
+Comment=Maps and turn-by-turn navigation for Linux phones
+Exec=navigation %u
 Icon=com.isyourbrainfoss.Navigation
 Terminal=false
 Type=Application
 Categories=Maps;Navigation;Geography;
 StartupWMClass=navigation
-Keywords=maps;gps;navigation;osm;routing;
+Keywords=maps;gps;navigation;osm;routing;gpx;
+MimeType=x-scheme-handler/geo;
+X-Purism-FormFactor=Workstation;Mobile;

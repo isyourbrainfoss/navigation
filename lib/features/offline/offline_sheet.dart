@@ -44,6 +44,7 @@ class OfflineSheet extends ConsumerStatefulWidget {
 class _OfflineSheetState extends ConsumerState<OfflineSheet> {
   double _radiusKm = 10;
   final _nameController = TextEditingController(text: 'Map area');
+  final _pendingDeleteIds = <String>{};
 
   @override
   void dispose() {
@@ -51,9 +52,40 @@ class _OfflineSheetState extends ConsumerState<OfflineSheet> {
     super.dispose();
   }
 
+  Future<void> _deleteWithUndo(String id, String name) async {
+    setState(() => _pendingDeleteIds.add(id));
+    final notifier = ref.read(offlineProvider.notifier);
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    final reason = await messenger
+        .showSnackBar(
+          SnackBar(
+            content: Text('Deleted $name'),
+            duration: const Duration(seconds: 5),
+            action: SnackBarAction(
+              label: 'Undo',
+              onPressed: () {
+                if (mounted) {
+                  setState(() => _pendingDeleteIds.remove(id));
+                }
+              },
+            ),
+          ),
+        )
+        .closed;
+    if (reason == SnackBarClosedReason.action) return;
+    await notifier.delete(id);
+    if (mounted) {
+      setState(() => _pendingDeleteIds.remove(id));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final offline = ref.watch(offlineProvider);
+    final regions = offline.regions
+        .where((r) => !_pendingDeleteIds.contains(r.id))
+        .toList();
     final cache = ref.watch(tileCacheServiceProvider);
     final radiusM = _radiusKm * 1000;
     final estimate = cache.estimateTiles(
@@ -174,7 +206,7 @@ class _OfflineSheetState extends ConsumerState<OfflineSheet> {
                   ?.copyWith(fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 8),
-            if (offline.regions.isEmpty)
+            if (regions.isEmpty)
               Text(
                 'No offline regions yet.',
                 style: theme.textTheme.bodyMedium?.copyWith(
@@ -182,24 +214,23 @@ class _OfflineSheetState extends ConsumerState<OfflineSheet> {
                 ),
               )
             else
-              ...offline.regions.map(
-                (r) => Card(
-                  child: ListTile(
-                    title: Text(r.name),
-                    subtitle: Text(
-                      '${formatRadiusKm(r.radiusMeters)} · '
-                      '${r.tileCount} tiles · ${formatBytes(r.bytes)}\n'
-                      '${r.status.name}',
-                    ),
-                    isThreeLine: true,
-                    trailing: IconButton(
-                      icon: const Icon(Icons.delete_outline),
-                      onPressed: () =>
-                          ref.read(offlineProvider.notifier).delete(r.id),
+              ...regions.map(
+                    (r) => Card(
+                      child: ListTile(
+                        title: Text(r.name),
+                        subtitle: Text(
+                          '${formatRadiusKm(r.radiusMeters)} · '
+                          '${r.tileCount} tiles · ${formatBytes(r.bytes)}\n'
+                          '${r.status.name}',
+                        ),
+                        isThreeLine: true,
+                        trailing: IconButton(
+                          icon: const Icon(Icons.delete_outline),
+                          onPressed: () => _deleteWithUndo(r.id, r.name),
+                        ),
+                      ),
                     ),
                   ),
-                ),
-              ),
           ],
         );
       },

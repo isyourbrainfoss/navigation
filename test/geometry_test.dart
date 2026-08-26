@@ -85,4 +85,39 @@ void main() {
       expect(GeoMath.bearingDegrees(a, b), closeTo(0, 1));
     });
   });
+
+  group('along-path', () {
+    test('cumulative at end equals path length', () {
+      final path = [
+        const LatLng(0, 0),
+        const LatLng(0, 1),
+      ];
+      final cum = GeoMath.cumulativeMeters(path);
+      expect(cum.last, closeTo(GeoMath.pathLengthMeters(path), 1));
+    });
+
+    test('pointAlongPath midpoint is near 0.5 deg', () {
+      final path = [
+        const LatLng(0, 0),
+        const LatLng(0, 1),
+      ];
+      final mid = GeoMath.pointAlongPath(path, GeoMath.pathLengthMeters(path) / 2);
+      expect(mid.longitude, closeTo(0.5, 0.05));
+    });
+
+    test('offset north ~111 km is +1 lat', () {
+      final p = GeoMath.offset(const LatLng(0, 0), 0, 111195);
+      expect(p.latitude, closeTo(1, 0.02));
+    });
+
+    test('nearestOnPolyline on vertex', () {
+      final path = [
+        const LatLng(0, 0),
+        const LatLng(0, 1),
+        const LatLng(0, 2),
+      ];
+      final n = GeoMath.nearestOnPolyline(const LatLng(0, 1), path);
+      expect(n.meters, lessThan(5));
+    });
+  });
 }

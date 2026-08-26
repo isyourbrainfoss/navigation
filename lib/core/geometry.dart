@@ -40,10 +40,16 @@ abstract final class GeoMath {
   }
 
   /// Closest point on polyline + distance and segment index.
+  ///
+  /// When [hintSegment] is set, searches `[hint-2, hint+windowSegments]` on the
+  /// continuous piece containing the hint (stops at a reverse-jump connector)
+  /// and only falls back to a full scan if that snap is farther than 70 m.
   static ({LatLng point, double meters, int segmentIndex}) nearestOnPolyline(
     LatLng point,
-    List<LatLng> path,
-  ) {
+    List<LatLng> path, {
+    int? hintSegment,
+    int windowSegments = 48,
+  }) {
     if (path.isEmpty) {
       return (point: point, meters: double.infinity, segmentIndex: 0);
     }
@@ -54,10 +60,53 @@ abstract final class GeoMath {
         segmentIndex: 0,
       );
     }
+    final last = path.length - 2;
+    if (hintSegment != null) {
+      var lo = hintSegment.clamp(0, last);
+      var hi = lo;
+      for (var step = 0; step < 2; step++) {
+        final i = lo - 1;
+        if (i < 0 || _isReverseJump(path, i)) break;
+        lo = i;
+      }
+      for (var step = 0; step < windowSegments; step++) {
+        final i = hi + 1;
+        if (i > last || _isReverseJump(path, i)) break;
+        hi = i;
+      }
+      final local = _nearestOnSegments(
+        point,
+        path,
+        lo,
+        hi,
+        skipReverseJumps: false,
+      );
+      if (local.meters <= 70) return local;
+    }
+    return _nearestOnSegments(
+      point,
+      path,
+      0,
+      last,
+      skipReverseJumps: true,
+    );
+  }
+
+  static ({LatLng point, double meters, int segmentIndex}) _nearestOnSegments(
+    LatLng point,
+    List<LatLng> path,
+    int fromSeg,
+    int toSeg, {
+    bool skipReverseJumps = false,
+  }) {
+    final lastSeg = path.length - 2;
+    final start = fromSeg.clamp(0, lastSeg);
+    final end = toSeg.clamp(0, lastSeg);
     var bestDist = double.infinity;
-    var bestPoint = path.first;
-    var bestSeg = 0;
-    for (var i = 0; i < path.length - 1; i++) {
+    var bestPoint = path[start];
+    var bestSeg = start;
+    for (var i = start; i <= end; i++) {
+      if (skipReverseJumps && _isReverseJump(path, i)) continue;
       final proj = _projectOnSegment(point, path[i], path[i + 1]);
       final d = haversineMeters(point, proj);
       if (d < bestDist) {
@@ -69,12 +118,145 @@ abstract final class GeoMath {
     return (point: bestPoint, meters: bestDist, segmentIndex: bestSeg);
   }
 
+  /// True when segment [i] reverses course across a long gap (concatenated
+  /// parallel copies, not a real road connector).
+  static bool _isReverseJump(List<LatLng> path, int i) {
+    if (i < 1 || i >= path.length - 1) return false;
+    final prev = bearingDegrees(path[i - 1], path[i]);
+    final cur = bearingDegrees(path[i], path[i + 1]);
+    var turn = (cur - prev).abs() % 360;
+    if (turn > 180) turn = 360 - turn;
+    final len = haversineMeters(path[i], path[i + 1]);
+    return turn > 150 && len > 500;
+  }
+
   static double pathLengthMeters(List<LatLng> path) {
     var sum = 0.0;
     for (var i = 0; i < path.length - 1; i++) {
       sum += haversineMeters(path[i], path[i + 1]);
     }
     return sum;
+  }
+
+  /// Cumulative distance at each vertex, meters from start.
+  static List<double> cumulativeMeters(List<LatLng> path) {
+    if (path.isEmpty) return const [];
+    final c = List<double>.filled(path.length, 0);
+    for (var i = 1; i < path.length; i++) {
+      c[i] = c[i - 1] + haversineMeters(path[i - 1], path[i]);
+    }
+    return c;
+  }
+
+  /// Distance along [path] from start to [snapped] on [segmentIndex].
+  static double traveledMeters({
+    required LatLng snapped,
+    required int segmentIndex,
+    required List<LatLng> path,
+    List<double>? cumulative,
+  }) {
+    if (path.isEmpty) return 0;
+    final cum = cumulative ?? cumulativeMeters(path);
+    if (segmentIndex < 0) return 0;
+    if (segmentIndex >= path.length - 1) return cum.last;
+    return cum[segmentIndex] + haversineMeters(path[segmentIndex], snapped);
+  }
+
+  /// Point at [meters] along [path] from the start.
+  static LatLng pointAlongPath(List<LatLng> path, double meters) {
+    if (path.isEmpty) return const LatLng(0, 0);
+    if (path.length == 1 || meters <= 0) return path.first;
+    var remaining = meters;
+    for (var i = 0; i < path.length - 1; i++) {
+      final seg = haversineMeters(path[i], path[i + 1]);
+      if (remaining <= seg || i == path.length - 2) {
+        final t = seg <= 1e-6 ? 0.0 : (remaining / seg).clamp(0.0, 1.0);
+        return LatLng(
+          path[i].latitude + t * (path[i + 1].latitude - path[i].latitude),
+          path[i].longitude + t * (path[i + 1].longitude - path[i].longitude),
+        );
+      }
+      remaining -= seg;
+    }
+    return path.last;
+  }
+
+  /// Split [path] at the snapped point. First list is traveled, second remaining.
+  static ({List<LatLng> traveled, List<LatLng> remaining}) splitAt({
+    required List<LatLng> path,
+    required LatLng snapped,
+    required int segmentIndex,
+  }) {
+    if (path.length < 2) {
+      return (traveled: path, remaining: path);
+    }
+    final i = segmentIndex.clamp(0, path.length - 2);
+    final traveled = <LatLng>[...path.sublist(0, i + 1), snapped];
+    final remaining = <LatLng>[snapped, ...path.sublist(i + 1)];
+    return (traveled: traveled, remaining: remaining);
+  }
+
+  static double lerpAngleDegrees(double a, double b, double t) {
+    var d = ((b - a + 540) % 360) - 180;
+    return (a + d * t + 360) % 360;
+  }
+
+  /// Destination point [meters] from [start] at [bearingDeg] (0 = north).
+  static LatLng offset(LatLng start, double bearingDeg, double meters) {
+    final br = _rad(bearingDeg);
+    final lat1 = _rad(start.latitude);
+    final lon1 = _rad(start.longitude);
+    final ang = meters / _earthRadiusM;
+    final lat2 = math.asin(
+      math.sin(lat1) * math.cos(ang) +
+          math.cos(lat1) * math.sin(ang) * math.cos(br),
+    );
+    final lon2 = lon1 +
+        math.atan2(
+          math.sin(br) * math.sin(ang) * math.cos(lat1),
+          math.cos(ang) - math.sin(lat1) * math.sin(lat2),
+        );
+    return LatLng(_deg(lat2), _deg(lon2));
+  }
+
+  static LatLng lerpLatLng(LatLng a, LatLng b, double t) {
+    final u = t.clamp(0.0, 1.0);
+    return LatLng(
+      a.latitude + (b.latitude - a.latitude) * u,
+      a.longitude + (b.longitude - a.longitude) * u,
+    );
+  }
+
+  /// Sample points along [path] roughly every [spacingMeters].
+  static List<({LatLng point, double bearing})> samplesAlong(
+    List<LatLng> path, {
+    required double spacingMeters,
+    int maxSamples = 24,
+  }) {
+    if (path.length < 2) return const [];
+    final out = <({LatLng point, double bearing})>[];
+    var acc = 0.0;
+    var nextAt = spacingMeters;
+    for (var i = 0; i < path.length - 1 && out.length < maxSamples; i++) {
+      final a = path[i];
+      final b = path[i + 1];
+      final seg = haversineMeters(a, b);
+      if (seg < 1) continue;
+      final bearing = bearingDegrees(a, b);
+      while (acc + seg >= nextAt && out.length < maxSamples) {
+        final t = ((nextAt - acc) / seg).clamp(0.0, 1.0);
+        out.add((
+          point: LatLng(
+            a.latitude + t * (b.latitude - a.latitude),
+            a.longitude + t * (b.longitude - a.longitude),
+          ),
+          bearing: bearing,
+        ));
+        nextAt += spacingMeters;
+      }
+      acc += seg;
+    }
+    return out;
   }
 
   // --- Web Mercator tile math ---

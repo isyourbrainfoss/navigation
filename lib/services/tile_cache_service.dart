@@ -75,6 +75,7 @@ class TileCacheService {
   }
 
   Future<File?> findTile(String styleKey, int z, int x, int y) async {
+    if (_root == null) return null;
     final f = tileFile(styleKey, z, x, y);
     if (await f.exists()) return f;
     return null;
@@ -229,8 +230,40 @@ class TileCacheService {
   }
 
   Future<void> deleteRegion(String id) async {
+    OfflineRegion? region;
+    for (final r in regions) {
+      if (r.id == id) region = r;
+    }
     regions.removeWhere((r) => r.id == id);
     await _saveRegionsMeta();
+    if (region == null) return;
+    // Best-effort: drop tiles whose file mtime is around this region.
+    // Named regions share the style tree; only delete files unique to a
+    // cancelled/failed region by pruning empty dirs after unused lookup.
+    // Full wipe of a style would drop other regions, so we only prune
+    // tiles that fall inside this region's circle.
+    try {
+      for (final style in ['light', 'dark', 'topo', 'cycle']) {
+        final tiles = <({int x, int y, int z})>[];
+        for (var z = region.minZoom; z <= region.maxZoom; z++) {
+          tiles.addAll(
+            GeoMath.tilesForCircle(
+              center: region.center,
+              radiusMeters: region.radiusMeters,
+              z: z,
+            ),
+          );
+        }
+        for (final t in tiles) {
+          final f = tileFile(style, t.z, t.x, t.y);
+          if (await f.exists()) {
+            await f.delete();
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('deleteRegion files: $e');
+    }
   }
 
   TileProvider createProvider({

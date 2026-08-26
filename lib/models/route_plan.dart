@@ -1,19 +1,32 @@
 import 'package:latlong2/latlong.dart';
 
+import '../core/format.dart';
 import 'place.dart';
 
-enum TravelMode { walk, drive }
+enum TravelMode { walk, bike, drive, truck }
 
 extension TravelModeX on TravelMode {
   String get label => switch (this) {
         TravelMode.walk => 'Walk',
+        TravelMode.bike => 'Bike',
         TravelMode.drive => 'Drive',
+        TravelMode.truck => 'Truck',
       };
 
   String get iconName => switch (this) {
         TravelMode.walk => 'directions_walk',
+        TravelMode.bike => 'directions_bike',
         TravelMode.drive => 'directions_car',
+        TravelMode.truck => 'local_shipping',
       };
+}
+
+class LaneInfo {
+  const LaneInfo({required this.indications, required this.valid});
+
+  /// OSRM lane indications, e.g. `left`, `straight`, `right`.
+  final List<String> indications;
+  final bool valid;
 }
 
 class NavInstruction {
@@ -25,6 +38,9 @@ class NavInstruction {
     this.modifier,
     this.type,
     this.name,
+    this.lanes = const [],
+    this.alongMeters = 0,
+    this.exit,
   });
 
   final String text;
@@ -34,6 +50,9 @@ class NavInstruction {
   final String? modifier;
   final String? type;
   final String? name;
+  final List<LaneInfo> lanes;
+  final double alongMeters;
+  final int? exit;
 }
 
 class RoutePlan {
@@ -45,36 +64,26 @@ class RoutePlan {
     required this.distanceMeters,
     required this.durationSeconds,
     required this.instructions,
+    this.vias = const [],
+    this.label = '',
+    this.maxSpeedKph = const [],
+    this.summary = '',
   });
 
   final Place origin;
   final Place destination;
+  final List<Place> vias;
   final TravelMode mode;
   final List<LatLng> geometry;
   final double distanceMeters;
   final double durationSeconds;
   final List<NavInstruction> instructions;
+  final String label;
+  final List<double?> maxSpeedKph;
+  final String summary;
 
-  String formatDistance({bool metric = true}) {
-    if (metric) {
-      if (distanceMeters < 1000) {
-        return '${distanceMeters.round()} m';
-      }
-      return '${(distanceMeters / 1000).toStringAsFixed(1)} km';
-    }
-    final miles = distanceMeters / 1609.344;
-    if (miles < 0.1) {
-      return '${(distanceMeters * 3.28084).round()} ft';
-    }
-    return '${miles.toStringAsFixed(1)} mi';
-  }
+  String formatDistance({bool metric = true}) =>
+      formatDistanceMeters(distanceMeters, metric: metric);
 
-  String formatDuration() {
-    final total = durationSeconds.round();
-    if (total < 60) return '<1 min';
-    final h = total ~/ 3600;
-    final m = (total % 3600) ~/ 60;
-    if (h == 0) return '$m min';
-    return '${h}h ${m.toString().padLeft(2, '0')}m';
-  }
+  String formatDuration() => formatDurationSeconds(durationSeconds);
 }

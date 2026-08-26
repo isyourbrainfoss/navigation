@@ -25,34 +25,28 @@ static void my_application_activate(GApplication* application) {
   GtkWindow* window =
       GTK_WINDOW(gtk_application_window_new(GTK_APPLICATION(application)));
 
-  // Use a header bar when running in GNOME as this is the common style used
-  // by applications and is the setup most users will be using (e.g. Ubuntu
-  // desktop).
-  // If running on X and not using GNOME then just use a traditional title bar
-  // in case the window manager does more exotic layout, e.g. tiling.
-  // If running on Wayland assume the header bar will work (may need changing
-  // if future cases occur).
-  gboolean use_header_bar = TRUE;
-#ifdef GDK_WINDOWING_X11
-  GdkScreen* screen = gtk_window_get_screen(window);
-  if (GDK_IS_X11_SCREEN(screen)) {
-    const gchar* wm_name = gdk_x11_screen_get_window_manager_name(screen);
-    if (g_strcmp0(wm_name, "GNOME Shell") != 0) {
-      use_header_bar = FALSE;
+  // Flutter draws all chrome. A GTK header bar steals space on Phosh /
+  // GNOME Mobile and doubles the title. Phone-first default size; maximize
+  // when the display is a handset.
+  gtk_window_set_title(window, "Navigation");
+  gtk_window_set_default_size(window, 400, 800);
+
+  GdkDisplay* display = gtk_widget_get_display(GTK_WIDGET(window));
+  if (display) {
+    GdkMonitor* monitor = gdk_display_get_primary_monitor(display);
+    if (monitor) {
+      GdkRectangle geom;
+      gdk_monitor_get_geometry(monitor, &geom);
+      // Handsets and Phosh (including 1080×2340) must go fullscreen
+      // without a CSD title bar.
+      const int phone = (geom.width <= 1080 || geom.height <= 1080) &&
+                        (geom.width < 1400 || geom.height < 1400);
+      if (phone) {
+        gtk_window_set_decorated(window, FALSE);
+        gtk_window_maximize(window);
+      }
     }
   }
-#endif
-  if (use_header_bar) {
-    GtkHeaderBar* header_bar = GTK_HEADER_BAR(gtk_header_bar_new());
-    gtk_widget_show(GTK_WIDGET(header_bar));
-    gtk_header_bar_set_title(header_bar, "navigation");
-    gtk_header_bar_set_show_close_button(header_bar, TRUE);
-    gtk_window_set_titlebar(window, GTK_WIDGET(header_bar));
-  } else {
-    gtk_window_set_title(window, "navigation");
-  }
-
-  gtk_window_set_default_size(window, 1280, 720);
 
   g_autoptr(FlDartProject) project = fl_dart_project_new();
   fl_dart_project_set_dart_entrypoint_arguments(

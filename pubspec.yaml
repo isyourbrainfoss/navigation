@@ -1,7 +1,7 @@
 name: navigation
-description: Simple multi-platform navigation — maps, walk/drive routing, offline regions.
+description: Phone-first OSM navigation — maps, turn-by-turn, GPX, offline tiles.
 publish_to: 'none'
-version: 0.1.0+1
+version: 0.2.0+2
 
 environment:
   sdk: ^3.12.2
@@ -20,6 +20,12 @@ dependencies:
   shared_preferences: ^2.5.3
   permission_handler: ^12.0.0+1
   package_info_plus: ^9.0.0
+  flutter_tts: ^4.2.3
+  wakelock_plus: ^1.3.2
+  xml: ^6.5.0
+  intl: ^0.20.2
+  file_picker: ^8.3.7
+  dbus: ^0.7.11
 
 dev_dependencies:
   flutter_test:

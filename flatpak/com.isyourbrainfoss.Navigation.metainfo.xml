@@ -2,14 +2,15 @@
 <component type="desktop-application">
   <id>com.isyourbrainfoss.Navigation</id>
   <name>Navigation</name>
-  <summary>Simple multi-platform OSM navigation</summary>
+  <summary>Turn-by-turn OSM navigation for Linux phones</summary>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>MIT</project_license>
   <developer_name>isyourbrainfoss</developer_name>
   <description>
     <p>
-      A simple, user-friendly navigation app with beautiful maps, walk and drive
-      routing, fuzzy place search, and offline map regions.
+      A phone-first navigation app with glanceable turn-by-turn, voice guidance,
+      walk/bike/drive/truck routing, fuzzy place search, GPX tracks, and
+      offline map regions.
     </p>
     <p>
       Built for Android phones, Linux desktop, and Linux phones. Map data from
@@ -28,6 +29,7 @@
   </categories>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.2.0" date="2026-08-24"/>
     <release version="0.1.0" date="2026-07-15"/>
   </releases>
   <requires>

@@ -22,7 +22,7 @@ if (secretKeystorePropertiesFile.exists()) {
 
 android {
     namespace = "com.isyourbrainfoss.navigation"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {

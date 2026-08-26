@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
-/// Material 3 map-friendly palette (light + dark).
+import '../constants.dart';
+
+/// Material 3 map-friendly palette (light, dark, night-driving).
 abstract final class NavigationTheme {
   static const _darkBg = Color(0xFF0D1117);
   static const _darkSurface = Color(0xFF161B22);
@@ -19,13 +21,22 @@ abstract final class NavigationTheme {
   static const _lightOnSurface = Color(0xFF1F2328);
   static const _lightOutline = Color(0xFFD0D7DE);
 
-  /// Route line color (works on both light and dark basemaps).
-  static const routeColor = Color(0xFF2563EB);
-  static const routeOutline = Color(0xFFFFFFFF);
+  static const _nightBg = Color(0xFF050506);
+  static const _nightSurface = Color(0xFF101114);
+  static const _nightCard = Color(0xFF1A1C20);
+  static const _nightPrimary = Color(0xFFFFB020);
+  static const _nightSecondary = Color(0xFF5B8CFF);
+  static const _nightOnSurface = Color(0xFFFFE7C2);
 
-  static ThemeData dark() {
+  static const routeColor = Color(0xFF3377FF);
+  static const routeOutline = Color(0xFFFFFFFF);
+  static const routeCasingNight = Color(0xE60B0B0C);
+  static const routeTraveled = Color(0xFF64748B);
+  static const routeNight = Color(0xFFFFC14A);
+
+  static ThemeData dark({bool highContrast = false, bool largeHud = true}) {
     final scheme = ColorScheme.dark(
-      primary: _darkPrimary,
+      primary: highContrast ? const Color(0xFF79B8FF) : _darkPrimary,
       secondary: _darkSecondary,
       tertiary: _darkTertiary,
       surface: _darkSurface,
@@ -37,12 +48,12 @@ abstract final class NavigationTheme {
       surfaceContainer: _darkSurface,
       error: const Color(0xFFF85149),
     );
-    return _build(scheme, _darkBg);
+    return _build(scheme, _darkBg, largeHud: largeHud, highContrast: highContrast);
   }
 
-  static ThemeData light() {
+  static ThemeData light({bool highContrast = false, bool largeHud = true}) {
     final scheme = ColorScheme.light(
-      primary: _lightPrimary,
+      primary: highContrast ? const Color(0xFF003F8F) : _lightPrimary,
       secondary: _lightSecondary,
       tertiary: _lightTertiary,
       surface: _lightSurface,
@@ -54,16 +65,55 @@ abstract final class NavigationTheme {
       surfaceContainer: _lightSurface,
       error: const Color(0xFFCF222E),
     );
-    return _build(scheme, _lightBg);
+    return _build(scheme, _lightBg, largeHud: largeHud, highContrast: highContrast);
   }
 
-  static ThemeData _build(ColorScheme scheme, Color scaffoldBg) {
-    return ThemeData(
+  static ThemeData nightDriving({bool highContrast = false, bool largeHud = true}) {
+    final scheme = ColorScheme.dark(
+      primary: _nightPrimary,
+      secondary: _nightSecondary,
+      tertiary: const Color(0xFFFF8A3D),
+      surface: _nightSurface,
+      onSurface: _nightOnSurface,
+      onPrimary: _nightBg,
+      outline: const Color(0xFF3A3428),
+      surfaceContainerHighest: _nightCard,
+      surfaceContainerHigh: _nightCard,
+      surfaceContainer: _nightSurface,
+      error: const Color(0xFFFF6B6B),
+    );
+    return _build(scheme, _nightBg, largeHud: largeHud, highContrast: highContrast);
+  }
+
+  static ThemeData _build(
+    ColorScheme scheme,
+    Color scaffoldBg, {
+    required bool largeHud,
+    required bool highContrast,
+  }) {
+    final base = ThemeData(
       useMaterial3: true,
       colorScheme: scheme,
       scaffoldBackgroundColor: scaffoldBg,
-      // Consistent Linux / desktop metrics.
-      platform: TargetPlatform.linux,
+      visualDensity: VisualDensity.standard,
+      materialTapTargetSize: MaterialTapTargetSize.padded,
+    );
+    final text = base.textTheme.copyWith(
+      displaySmall: base.textTheme.displaySmall?.copyWith(
+        fontWeight: FontWeight.w800,
+        fontSize: largeHud ? 40 : 32,
+        letterSpacing: -0.8,
+        fontFeatures: const [FontFeature.tabularFigures()],
+      ),
+      headlineMedium: base.textTheme.headlineMedium?.copyWith(
+        fontWeight: FontWeight.w700,
+        fontSize: largeHud ? 28 : 22,
+        fontFeatures: const [FontFeature.tabularFigures()],
+      ),
+      titleLarge: base.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+    );
+    return base.copyWith(
+      textTheme: text,
       appBarTheme: AppBarTheme(
         backgroundColor: scaffoldBg.withValues(alpha: 0.92),
         foregroundColor: scheme.onSurface,
@@ -84,8 +134,22 @@ abstract final class NavigationTheme {
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
+          minimumSize: const Size(64, AppConstants.minTouchDp),
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          minimumSize: const Size(64, AppConstants.minTouchDp),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        ),
+      ),
+      iconButtonTheme: IconButtonThemeData(
+        style: IconButton.styleFrom(
+          minimumSize: const Size(AppConstants.minTouchDp, AppConstants.minTouchDp),
+          tapTargetSize: MaterialTapTargetSize.padded,
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
@@ -93,10 +157,11 @@ abstract final class NavigationTheme {
         fillColor: scheme.surfaceContainerHighest,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide.none,
+          borderSide: highContrast
+              ? BorderSide(color: scheme.outline)
+              : BorderSide.none,
         ),
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
       ),
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
@@ -104,6 +169,10 @@ abstract final class NavigationTheme {
       ),
       floatingActionButtonTheme: FloatingActionButtonThemeData(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      ),
+      sliderTheme: SliderThemeData(
+        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 12),
+        trackHeight: 6,
       ),
     );
   }

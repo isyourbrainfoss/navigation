@@ -9,9 +9,16 @@ finish-args:
   - --share=network
   - --socket=fallback-x11
   - --socket=wayland
+  - --socket=pulseaudio
   - --device=dri
   - --talk-name=org.freedesktop.Notifications
+  - --talk-name=org.freedesktop.ScreenSaver
+  - --talk-name=org.freedesktop.portal.Desktop
   - --talk-name=org.freedesktop.GeoClue2
+  - --system-talk-name=org.freedesktop.GeoClue2
+  - --filesystem=xdg-run/speech-dispatcher:ro
+  - --filesystem=xdg-download
+  - --filesystem=xdg-documents
 modules:
   - name: navigation
     buildsystem: simple
@@ -25,6 +32,9 @@ modules:
       - install -Dm644 com.isyourbrainfoss.Navigation.png /app/share/icons/hicolor/64x64/apps/com.isyourbrainfoss.Navigation.png
       - install -Dm644 com.isyourbrainfoss.Navigation.png /app/share/icons/hicolor/512x512/apps/com.isyourbrainfoss.Navigation.png
       - install -Dm644 com.isyourbrainfoss.Navigation.desktop /app/share/applications/com.isyourbrainfoss.Navigation.desktop
+      # geolocator_linux sets GeoClue DesktopId from PackageInfo.appName
+      # ("navigation"), not the reverse-DNS app id.
+      - install -Dm644 com.isyourbrainfoss.Navigation.desktop /app/share/applications/navigation.desktop
       - install -Dm644 com.isyourbrainfoss.Navigation.metainfo.xml /app/share/metainfo/com.isyourbrainfoss.Navigation.metainfo.xml
     sources:
       - type: archive

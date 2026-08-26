@@ -1,20 +1,21 @@
 # Navigation
 
-Simple, user-friendly **maps + navigation** for **Android**, **Linux desktop**, and **Linux mobile**.
+Phone-first **maps + turn-by-turn** for **Android**, **Linux desktop**, and **Linux mobile** (Phosh, Droidian, postmarketOS).
 
-OpenStreetMap basemap, Photon fuzzy search, walk/drive routing (OSRM), GPS follow, and offline map region downloads. No API keys required for the default setup.
+OpenStreetMap basemap, Photon search, OSRM/Valhalla routing, voice guidance, GPX, GPS follow, and offline map region downloads. No API keys required for the default setup.
 
 ## Features
 
-- **Beautiful maps** — light/dark CARTO basemaps with OSM data
-- **Fuzzy place search** — Photon (Komoot), recents + favorites
-- **Walk & drive routing** — FOSSGIS OSRM public profiles
-- **Turn-by-turn guidance** — next instruction, ETA, re-route when off course
+- **Glanceable HUD** — large distance-to-turn, then-instruction, remaining ETA, speed
+- **Voice + haptics** — speech-dispatcher / TTS, mute, keep-screen-on
+- **Walk, bike, drive, truck** — FOSSGIS OSRM + public Valhalla
+- **Waypoints and alternative routes** — add stops, pick a variant
+- **Fuzzy search** — Photon, coordinates, `geo:` URIs, POI chips, along-route
+- **GPX** — record tracks, import/export, overlay on the map
 - **Offline regions** — download tiles around the map for offline browse
-- **Few taps** — search → pick → Go; or long-press map → Navigate here
-- **Adaptive UI** — Material 3, phone-friendly controls
+- **Linux-phone chrome** — 56dp targets, compass, scale bar, zoom ±, rotation lock, no GTK header bar
 
-> Offline **routing** is not included yet (online routing + offline tiles in v0.1).
+> Offline **routing** still needs a network (or a custom local OSRM/Valhalla URL in Settings). Tiles can be used offline.
 
 ## Install
 
