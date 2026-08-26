@@ -350,7 +350,7 @@ class _OfflineAwareImage extends ImageProvider<_OfflineAwareImage> {
     if (offline != null) {
       final bytes = await offline.readAsBytes();
       final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
-      return decode(buffer);
+      return await decode(buffer);
     }
 
     final url = urlTemplate
@@ -367,7 +367,7 @@ class _OfflineAwareImage extends ImageProvider<_OfflineAwareImage> {
           await service.writeTile(styleKey, z, x, y, resp.bodyBytes);
         } catch (_) {}
         final buffer = await ui.ImmutableBuffer.fromUint8List(resp.bodyBytes);
-        return decode(buffer);
+        return await decode(buffer);
       }
     } catch (e) {
       debugPrint('tile fetch failed: $e');
@@ -385,7 +385,7 @@ class _OfflineAwareImage extends ImageProvider<_OfflineAwareImage> {
     final buffer = await ui.ImmutableBuffer.fromUint8List(
       Uint8List.fromList(transparentPng),
     );
-    return decode(buffer);
+    return await decode(buffer);
   }
 
   @override
