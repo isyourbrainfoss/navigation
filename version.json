@@ -1,8 +1,8 @@
 {
-  "version": "build-4",
-  "versionName": "build-4",
-  "versionCode": 4,
-  "sha256sum": "40bd731ae249ff30692986af5a7da511ad04d22cedf0a6c5dd0f14783efc1c30",
+  "version": "build-5",
+  "versionName": "build-5",
+  "versionCode": 5,
+  "sha256sum": "4cd7786605ad7c94f5e2438e7dfdc22f9af1e42532d0c8b83503e51fe9eed4d9",
   "url": "https://raw.githubusercontent.com/isyourbrainfoss/navigation/gh-pages/navigation-arm64-v8a.apk",
-  "uploadTimestamp": 1791666104000
+  "uploadTimestamp": 1791666512000
 }
