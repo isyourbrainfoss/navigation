@@ -1,5 +1,9 @@
 # Navigation
 
+> **Note**
+> This is very experimental. Assume nothing here is written, or necessarily read through or fully understood, by a human unless stated, and that includes this text. Use it at your own risk, but you're encouraged to reuse any parts you find useful. The human work here is mainly ideas, testing in reality, and persistence with a vision.
+
+
 Phone-first **maps + turn-by-turn** for **Android**, **Linux desktop**, and **Linux mobile** (Phosh, Droidian, postmarketOS).
 
 OpenStreetMap basemap, Photon search, OSRM/Valhalla routing, voice guidance, GPX, GPS follow, and offline map region downloads. No API keys required for the default setup.
