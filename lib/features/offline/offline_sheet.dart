@@ -4,6 +4,7 @@ import 'package:latlong2/latlong.dart';
 
 import '../../core/constants.dart';
 import '../../core/format.dart';
+import '../../core/map_style.dart';
 import '../../providers/app_providers.dart';
 
 Future<void> showOfflineSheet(
@@ -88,6 +89,7 @@ class _OfflineSheetState extends ConsumerState<OfflineSheet> {
         .toList();
     final cache = ref.watch(tileCacheServiceProvider);
     final radiusM = _radiusKm * 1000;
+    final bulkAllowed = tileSourceAllowsBulkDownload(widget.urlTemplate);
     final estimate = cache.estimateTiles(
       center: widget.center,
       radiusMeters: radiusM,
@@ -154,6 +156,15 @@ class _OfflineSheetState extends ConsumerState<OfflineSheet> {
               ),
               const SizedBox(height: 8),
             ],
+            if (!bulkAllowed) ...[
+              Text(
+                'OpenStreetMap\'s tile servers do not allow area downloads. '
+                'Add a free CARTO key in Settings → Advanced, or switch the '
+                'map style, to download this area.',
+                style: TextStyle(color: theme.colorScheme.error),
+              ),
+              const SizedBox(height: 8),
+            ],
             if (offline.error != null)
               Text(
                 offline.error!,
@@ -163,7 +174,7 @@ class _OfflineSheetState extends ConsumerState<OfflineSheet> {
               children: [
                 Expanded(
                   child: FilledButton.icon(
-                    onPressed: offline.downloading
+                    onPressed: offline.downloading || !bulkAllowed
                         ? null
                         : () async {
                             await ref.read(offlineProvider.notifier).download(

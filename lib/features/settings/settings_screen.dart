@@ -41,7 +41,7 @@ class SettingsScreen extends ConsumerWidget {
             values: MapStylePreference.values,
             label: (v) => switch (v) {
               MapStylePreference.auto => 'Auto',
-              MapStylePreference.light => 'Voyager',
+              MapStylePreference.light => 'Street',
               MapStylePreference.dark => 'Dark',
               MapStylePreference.topo => 'Topographic',
               MapStylePreference.cycle => 'Cycling',
@@ -183,6 +183,47 @@ class SettingsScreen extends ConsumerWidget {
             },
           ),
           const _SectionTitle('Advanced'),
+          ListTile(
+            title: const Text('CARTO basemap key'),
+            subtitle: Text(
+              settings.cartoApiKey.isEmpty
+                  ? 'Optional. Street/Dark use OpenStreetMap tiles; add a free '
+                      'key from carto.com/basemaps/apikey for CARTO Voyager / '
+                      'Dark Matter and offline downloads'
+                  : 'Set — using CARTO Voyager / Dark Matter',
+            ),
+            onTap: () async {
+              final controller =
+                  TextEditingController(text: settings.cartoApiKey);
+              final value = await showDialog<String>(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  title: const Text('CARTO basemap key'),
+                  content: TextField(
+                    controller: controller,
+                    decoration: const InputDecoration(
+                      hintText: 'Key from carto.com/basemaps/apikey',
+                    ),
+                    autofocus: true,
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx, ''),
+                      child: const Text('Clear'),
+                    ),
+                    FilledButton(
+                      onPressed: () =>
+                          Navigator.pop(ctx, controller.text.trim()),
+                      child: const Text('Save'),
+                    ),
+                  ],
+                ),
+              );
+              if (value != null) {
+                await n.setCartoApiKey(value);
+              }
+            },
+          ),
           ListTile(
             title: const Text('Custom routing server'),
             subtitle: Text(

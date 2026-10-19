@@ -21,6 +21,7 @@ class AppSettings {
     this.largeHud = true,
     this.highContrast = false,
     this.customRoutingUrl = '',
+    this.cartoApiKey = '',
   });
 
   final ThemePreference theme;
@@ -38,6 +39,9 @@ class AppSettings {
   final bool largeHud;
   final bool highContrast;
   final String customRoutingUrl;
+
+  /// Optional CARTO basemaps key; enables Voyager / Dark Matter tiles.
+  final String cartoApiKey;
 
   static const defaults = AppSettings();
 
@@ -57,6 +61,7 @@ class AppSettings {
     bool? largeHud,
     bool? highContrast,
     String? customRoutingUrl,
+    String? cartoApiKey,
   }) {
     return AppSettings(
       theme: theme ?? this.theme,
@@ -74,6 +79,7 @@ class AppSettings {
       largeHud: largeHud ?? this.largeHud,
       highContrast: highContrast ?? this.highContrast,
       customRoutingUrl: customRoutingUrl ?? this.customRoutingUrl,
+      cartoApiKey: cartoApiKey ?? this.cartoApiKey,
     );
   }
 
@@ -93,6 +99,7 @@ class AppSettings {
         'largeHud': largeHud,
         'highContrast': highContrast,
         'customRoutingUrl': customRoutingUrl,
+        'cartoApiKey': cartoApiKey,
       };
 
   factory AppSettings.fromJson(Map<String, dynamic>? json) {
@@ -125,6 +132,7 @@ class AppSettings {
       largeHud: json['largeHud'] as bool? ?? true,
       highContrast: json['highContrast'] as bool? ?? false,
       customRoutingUrl: json['customRoutingUrl'] as String? ?? '',
+      cartoApiKey: json['cartoApiKey'] as String? ?? '',
     );
   }
 }
