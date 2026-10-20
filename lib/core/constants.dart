@@ -5,7 +5,14 @@ abstract final class AppConstants {
   static const userAgent =
       'Navigation/0.2 (https://github.com/isyourbrainfoss/navigation; FOSS)';
 
-  /// Carto Voyager — free raster tiles, attribution required.
+  /// OpenStreetMap standard tiles — keyless default. Their tile usage
+  /// policy forbids bulk downloads, so offline regions need another source.
+  static const tileUrlOsm = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+  static const tileAttributionOsm = '© OpenStreetMap contributors';
+
+  /// CARTO Voyager / Dark Matter. Since 25 Sep 2026 these need a (free)
+  /// API key from https://carto.com/basemaps/apikey/ — keyless requests
+  /// only return "API KEY REQUIRED" tiles.
   static const tileUrlLight =
       'https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png';
   static const tileUrlDark =
@@ -70,8 +77,10 @@ abstract final class AppConstants {
   static const maxFavorites = 80;
   static const maxBookmarkFolders = 24;
 
-  static const tileDownloadConcurrency = 4;
-  static const tileDownloadDelayMs = 40;
+  /// Offline-region downloads: be gentle with the tile server (at most
+  /// ~2 requests in flight, each worker pausing between tiles).
+  static const tileDownloadConcurrency = 2;
+  static const tileDownloadDelayMs = 250;
 
   static const minTouchDp = 56.0;
 }

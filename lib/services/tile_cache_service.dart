@@ -13,6 +13,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../core/constants.dart';
 import '../core/geometry.dart';
+import '../core/map_style.dart';
 import '../models/offline_region.dart';
 
 /// File-tree offline tile cache + region bulk download.
@@ -29,11 +30,42 @@ class TileCacheService {
   Stream<DownloadProgress> get progress => _progressController.stream;
   bool get isDownloading => _downloading;
 
-  Future<void> init() async {
-    final support = await getApplicationSupportDirectory();
-    _root = Directory(p.join(support.path, 'offline_tiles'));
+  /// [rootOverride] is for tests; the app uses the support directory.
+  Future<void> init({Directory? rootOverride}) async {
+    if (rootOverride != null) {
+      _root = rootOverride;
+    } else {
+      final support = await getApplicationSupportDirectory();
+      _root = Directory(p.join(support.path, 'offline_tiles'));
+    }
     await _root!.create(recursive: true);
+    await _purgeLegacyCartoTilesOnce();
     await _loadRegionsMeta();
+  }
+
+  /// Marker written once the legacy `light` / `dark` dirs have been purged.
+  static const legacyCartoPurgeMarker = '.purged_keyless_carto_v1';
+
+  /// Before CARTO needed a key, Voyager / Dark Matter tiles were cached under
+  /// `light` / `dark`. Since 25 Sep 2026 keyless requests return HTTP 200
+  /// "API KEY REQUIRED" placeholders, which were cached there too. Keyed
+  /// CARTO now uses fresh keys, and the old dirs are deleted once.
+  Future<void> _purgeLegacyCartoTilesOnce() async {
+    final marker = File(p.join(root.path, legacyCartoPurgeMarker));
+    if (await marker.exists()) return;
+    for (final key in legacyCartoStyleKeys) {
+      final dir = Directory(p.join(root.path, key));
+      try {
+        if (await dir.exists()) await dir.delete(recursive: true);
+      } catch (e) {
+        debugPrint('purge legacy tiles $key: $e');
+      }
+    }
+    try {
+      await marker.writeAsString('1');
+    } catch (e) {
+      debugPrint('purge marker: $e');
+    }
   }
 
   Directory get root {
@@ -77,7 +109,18 @@ class TileCacheService {
   Future<File?> findTile(String styleKey, int z, int x, int y) async {
     if (_root == null) return null;
     final f = tileFile(styleKey, z, x, y);
-    if (await f.exists()) return f;
+    if (await f.exists()) {
+      // Self-heal: never serve a cached CARTO "API KEY REQUIRED" tile.
+      try {
+        final len = await f.length();
+        if (isCartoPlaceholderSize(len) &&
+            isCartoPlaceholderTile(await f.readAsBytes())) {
+          await f.delete();
+          return null;
+        }
+      } catch (_) {}
+      return f;
+    }
     return null;
   }
 
@@ -88,6 +131,7 @@ class TileCacheService {
     int y,
     List<int> bytes,
   ) async {
+    if (isCartoPlaceholderTile(bytes)) return;
     final file = tileFile(styleKey, z, x, y);
     await file.parent.create(recursive: true);
     await file.writeAsBytes(bytes, flush: true);
@@ -118,6 +162,12 @@ class TileCacheService {
   }) async {
     if (_downloading) {
       throw StateError('A download is already in progress');
+    }
+    if (!tileSourceAllowsBulkDownload(urlTemplate)) {
+      throw StateError(
+        'This map style does not allow offline downloads. '
+        'Add a CARTO API key and use the Light or Dark style.',
+      );
     }
     _downloading = true;
     _cancelRequested = false;
@@ -152,6 +202,7 @@ class TileCacheService {
 
     var done = 0;
     var bytes = 0;
+    Object? failure;
     final queue = List<({int x, int y, int z})>.from(tiles);
 
     Future<void> worker() async {
@@ -170,6 +221,11 @@ class TileCacheService {
               Uri.parse(url),
               headers: {'User-Agent': AppConstants.userAgent},
             );
+            if (isTilePlaceholderResponse(resp)) {
+              throw StateError(
+                'CARTO returned "API KEY REQUIRED" — check the API key',
+              );
+            }
             if (resp.statusCode == 200 && resp.bodyBytes.isNotEmpty) {
               await writeTile(
                 styleKey,
@@ -184,7 +240,12 @@ class TileCacheService {
             bytes += await file.length();
           }
         } catch (e) {
-          debugPrint('tile download error $tile: $e');
+          debugPrint('tile download error $tile: ${redactTileKey('$e')}');
+          if (e is StateError) {
+            // Bad / missing key: stop instead of hammering the server.
+            _cancelRequested = true;
+            failure ??= e;
+          }
         }
         done++;
         if (!_progressController.isClosed) {
@@ -207,7 +268,9 @@ class TileCacheService {
       await Future.wait(
         List.generate(AppConstants.tileDownloadConcurrency, (_) => worker()),
       );
-      if (_cancelRequested) {
+      if (failure != null) {
+        region.status = DownloadStatus.failed;
+      } else if (_cancelRequested) {
         region.status = DownloadStatus.cancelled;
       } else {
         region.status = DownloadStatus.complete;
@@ -215,6 +278,7 @@ class TileCacheService {
       region.bytes = bytes;
       region.tileCount = done;
       await _saveRegionsMeta();
+      if (failure != null) throw failure!;
       return region;
     } catch (e) {
       region.status = DownloadStatus.failed;
@@ -243,7 +307,7 @@ class TileCacheService {
     // Full wipe of a style would drop other regions, so we only prune
     // tiles that fall inside this region's circle.
     try {
-      for (final style in ['light', 'dark', 'topo', 'cycle']) {
+      for (final style in allTileStyleKeys) {
         final tiles = <({int x, int y, int z})>[];
         for (var z = region.minZoom; z <= region.maxZoom; z++) {
           tiles.addAll(
@@ -283,6 +347,34 @@ class TileCacheService {
     _client.close();
   }
 }
+
+/// Sizes (bytes) of CARTO's keyless "API KEY REQUIRED" tiles (Voyager-style
+/// light and Dark Matter), as served since 25 Sep 2026.
+const _cartoPlaceholderSizes = {2049, 2513};
+
+/// FNV-1a 32-bit hashes of those placeholder PNGs.
+const _cartoPlaceholderHashes = {0xbf743404, 0x09d0920b};
+
+int _fnv1a32(List<int> bytes) {
+  var h = 0x811c9dc5;
+  for (final b in bytes) {
+    h = ((h ^ (b & 0xff)) * 0x01000193) & 0xffffffff;
+  }
+  return h;
+}
+
+/// Cheap pre-check before reading a cached file.
+bool isCartoPlaceholderSize(int length) =>
+    _cartoPlaceholderSizes.contains(length);
+
+/// Whether [bytes] is CARTO's "API KEY REQUIRED" placeholder tile.
+bool isCartoPlaceholderTile(List<int> bytes) =>
+    isCartoPlaceholderSize(bytes.length) &&
+    _cartoPlaceholderHashes.contains(_fnv1a32(bytes));
+
+/// CARTO serves the placeholder with HTTP 200, so check the body.
+bool isTilePlaceholderResponse(http.Response resp) =>
+    isCartoPlaceholderTile(resp.bodyBytes);
 
 class _CachingTileProvider extends TileProvider {
   _CachingTileProvider({
@@ -362,7 +454,9 @@ class _OfflineAwareImage extends ImageProvider<_OfflineAwareImage> {
         Uri.parse(url),
         headers: {'User-Agent': AppConstants.userAgent},
       );
-      if (resp.statusCode == 200 && resp.bodyBytes.isNotEmpty) {
+      if (resp.statusCode == 200 &&
+          resp.bodyBytes.isNotEmpty &&
+          !isTilePlaceholderResponse(resp)) {
         try {
           await service.writeTile(styleKey, z, x, y, resp.bodyBytes);
         } catch (_) {}
@@ -370,7 +464,7 @@ class _OfflineAwareImage extends ImageProvider<_OfflineAwareImage> {
         return await decode(buffer);
       }
     } catch (e) {
-      debugPrint('tile fetch failed: $e');
+      debugPrint('tile fetch failed: ${redactTileKey('$e')}');
     }
 
     // 1×1 transparent PNG fallback
