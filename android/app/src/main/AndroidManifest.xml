@@ -42,6 +42,11 @@
             android:value="2" />
     </application>
     <queries>
+        <!-- url_launcher: open the OSM copyright page in a browser. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="https"/>
+        </intent>
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>

@@ -77,8 +77,10 @@ abstract final class AppConstants {
   static const maxFavorites = 80;
   static const maxBookmarkFolders = 24;
 
-  static const tileDownloadConcurrency = 4;
-  static const tileDownloadDelayMs = 40;
+  /// Offline-region downloads: be gentle with the tile server (at most
+  /// ~2 requests in flight, each worker pausing between tiles).
+  static const tileDownloadConcurrency = 2;
+  static const tileDownloadDelayMs = 250;
 
   static const minTouchDp = 56.0;
 }

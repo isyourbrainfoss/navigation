@@ -22,8 +22,45 @@ class ResolvedMapStyle {
 }
 
 /// Whether [urlTemplate]'s tile server allows bulk (offline region) downloads.
-bool tileSourceAllowsBulkDownload(String urlTemplate) =>
-    !urlTemplate.contains('tile.openstreetmap.org');
+///
+/// Allowlist: only keyed CARTO basemaps. OpenStreetMap's tile usage policy
+/// forbids bulk downloads, and the volunteer-run OpenTopoMap and CyclOSM
+/// servers ask apps not to scrape them either. Keyless CARTO only serves
+/// "API KEY REQUIRED" placeholders, so it is not downloadable.
+bool tileSourceAllowsBulkDownload(String urlTemplate) {
+  final uri = Uri.tryParse(urlTemplate.replaceAll(RegExp(r'[{}]'), ''));
+  if (uri == null || uri.scheme != 'https') return false;
+  final host = uri.host;
+  final isCarto = host == 'basemaps.cartocdn.com' ||
+      host.endsWith('.basemaps.cartocdn.com');
+  return isCarto && (uri.queryParameters['key'] ?? '').trim().isNotEmpty;
+}
+
+/// Cache directory keys for keyed CARTO styles. Deliberately *not* the old
+/// `light` / `dark` keys, which may hold cached keyless "API KEY REQUIRED"
+/// placeholder tiles (those dirs are purged once by [TileCacheService]).
+const cartoLightStyleKey = 'carto-light';
+const cartoDarkStyleKey = 'carto-dark';
+
+/// Legacy cache keys used for CARTO before it needed an API key.
+const legacyCartoStyleKeys = ['light', 'dark'];
+
+/// Every style key that may own tiles in the offline cache.
+const allTileStyleKeys = [
+  cartoLightStyleKey,
+  cartoDarkStyleKey,
+  'osm',
+  'topo',
+  'cycle',
+  ...legacyCartoStyleKeys,
+];
+
+/// Replace any CARTO `key=` value in [text] (URLs, exception messages) so
+/// API keys never end up in logs.
+String redactTileKey(String text) => text.replaceAllMapped(
+  RegExp(r'''([?&]key=)[^&\s#'"]*'''),
+  (m) => '${m[1]}<redacted>',
+);
 
 String _withCartoKey(String url, String key) =>
     '$url?key=${Uri.encodeQueryComponent(key)}';
@@ -37,7 +74,7 @@ ResolvedMapStyle _street({required bool dark, required String cartoKey}) {
         key,
       ),
       attribution: AppConstants.tileAttributionCarto,
-      styleKey: dark ? 'dark' : 'light',
+      styleKey: dark ? cartoDarkStyleKey : cartoLightStyleKey,
       dark: dark,
     );
   }

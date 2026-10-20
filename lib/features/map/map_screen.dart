@@ -57,6 +57,10 @@ class _MapScreenState extends ConsumerState<MapScreen>
   double _camZoomTarget = AppConstants.defaultZoom;
   double _camRotTarget = 0;
   bool _smoothFollow = false;
+
+  /// Full OSM attribution is shown until the user first interacts with the
+  /// map; it then collapses to "©" (tap to expand again).
+  bool _attributionCollapsed = false;
   late final LatLng _initialCenter;
   late final double _initialZoom;
   late final double _initialRotation;
@@ -549,6 +553,9 @@ class _MapScreenState extends ConsumerState<MapScreen>
                 src == MapEventSource.flingAnimationController;
             if (userGesture) {
               _noteActivity();
+              if (!_attributionCollapsed) {
+                setState(() => _attributionCollapsed = true);
+              }
               if (ref.read(mapSessionProvider).followUser) {
                 ref.read(mapSessionProvider.notifier).setFollowUser(false);
                 _smoothFollow = false;
@@ -761,7 +768,11 @@ class _MapScreenState extends ConsumerState<MapScreen>
           alignment: Alignment.bottomRight,
           child: Padding(
             padding: EdgeInsets.only(right: 8, bottom: padding.bottom + 4),
-            child: AttributionChip(text: style.attribution),
+            child: AttributionChip(
+              text: style.attribution,
+              collapsed: _attributionCollapsed,
+              onExpand: () => setState(() => _attributionCollapsed = false),
+            ),
           ),
         ),
       ],

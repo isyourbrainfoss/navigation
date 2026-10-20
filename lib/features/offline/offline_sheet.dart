@@ -158,9 +158,10 @@ class _OfflineSheetState extends ConsumerState<OfflineSheet> {
             ],
             if (!bulkAllowed) ...[
               Text(
-                'OpenStreetMap\'s tile servers do not allow area downloads. '
-                'Add a free CARTO key in Settings → Advanced, or switch the '
-                'map style, to download this area.',
+                'Area downloads are only available for CARTO Light / Dark '
+                'maps with a free CARTO key (Settings → Advanced). The '
+                'OpenStreetMap, OpenTopoMap and CyclOSM tile servers do not '
+                'allow bulk downloads.',
                 style: TextStyle(color: theme.colorScheme.error),
               ),
               const SizedBox(height: 8),
