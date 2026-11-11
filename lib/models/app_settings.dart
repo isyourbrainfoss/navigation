@@ -22,6 +22,7 @@ class AppSettings {
     this.highContrast = false,
     this.customRoutingUrl = '',
     this.cartoApiKey = '',
+    this.tileCacheLimitMb = 500,
   });
 
   final ThemePreference theme;
@@ -43,6 +44,12 @@ class AppSettings {
   /// Optional CARTO basemaps key; enables Voyager / Dark Matter tiles.
   final String cartoApiKey;
 
+  /// Soft cap for the map tile cache in MB; 0 = no limit. Only tiles cached
+  /// while browsing are evicted (oldest first), never saved offline regions.
+  final int tileCacheLimitMb;
+
+  static const tileCacheLimitChoicesMb = [250, 500, 1000, 2000, 0];
+
   static const defaults = AppSettings();
 
   AppSettings copyWith({
@@ -62,6 +69,7 @@ class AppSettings {
     bool? highContrast,
     String? customRoutingUrl,
     String? cartoApiKey,
+    int? tileCacheLimitMb,
   }) {
     return AppSettings(
       theme: theme ?? this.theme,
@@ -80,6 +88,7 @@ class AppSettings {
       highContrast: highContrast ?? this.highContrast,
       customRoutingUrl: customRoutingUrl ?? this.customRoutingUrl,
       cartoApiKey: cartoApiKey ?? this.cartoApiKey,
+      tileCacheLimitMb: tileCacheLimitMb ?? this.tileCacheLimitMb,
     );
   }
 
@@ -100,6 +109,7 @@ class AppSettings {
         'highContrast': highContrast,
         'customRoutingUrl': customRoutingUrl,
         'cartoApiKey': cartoApiKey,
+        'tileCacheLimitMb': tileCacheLimitMb,
       };
 
   factory AppSettings.fromJson(Map<String, dynamic>? json) {
@@ -133,6 +143,7 @@ class AppSettings {
       highContrast: json['highContrast'] as bool? ?? false,
       customRoutingUrl: json['customRoutingUrl'] as String? ?? '',
       cartoApiKey: json['cartoApiKey'] as String? ?? '',
+      tileCacheLimitMb: (json['tileCacheLimitMb'] as num?)?.toInt() ?? 500,
     );
   }
 }

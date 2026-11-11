@@ -16,8 +16,11 @@ void main() {
       voiceEnabled: false,
       nightDriving: NightDriving.on,
       customRoutingUrl: 'http://127.0.0.1:5000',
+      tileCacheLimitMb: 2000,
     );
     final back = AppSettings.fromJson(s.toJson());
+    expect(back.tileCacheLimitMb, 2000);
+    expect(AppSettings.fromJson(const {}).tileCacheLimitMb, 500);
     expect(back.theme, ThemePreference.dark);
     expect(back.mapStyle, MapStylePreference.topo);
     expect(back.metricUnits, false);

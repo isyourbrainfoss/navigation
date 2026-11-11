@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 
 import '../core/constants.dart';
@@ -434,7 +436,7 @@ class MapSessionNotifier extends StateNotifier<MapSession> {
       state = state.copyWith(
         routing: false,
         rerouting: false,
-        routeError: e.toString(),
+        routeError: friendlyRoutingError(e),
         clearRoute: keepNavigating ? false : true,
       );
     }
@@ -785,3 +787,27 @@ final offlineProvider =
 final trackRecorderProvider = Provider<TrackRecorder>((ref) => TrackRecorder());
 
 final isRecordingProvider = StateProvider<bool>((ref) => false);
+
+/// Turn transport exceptions into something a driver can act on.
+String friendlyRoutingError(Object e) {
+  final text = e.toString();
+  if (e is RoutingException) {
+    if (text.contains('timed out')) {
+      return 'The routing server is not answering. Check your connection '
+          'and retry.';
+    }
+    return text;
+  }
+  if (e is TimeoutException) {
+    return 'The routing server is not answering. Check your connection '
+        'and retry.';
+  }
+  if (e is SocketException ||
+      e is http.ClientException ||
+      text.contains('SocketException') ||
+      text.contains('Failed host lookup')) {
+    return 'No connection to the routing server. Check your internet and '
+        'retry.';
+  }
+  return text;
+}

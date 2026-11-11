@@ -359,7 +359,7 @@ class _PeekHeader extends StatelessWidget {
   }
 }
 
-class _PeekStats extends StatelessWidget {
+class _PeekStats extends ConsumerWidget {
   const _PeekStats({
     required this.routing,
     required this.routeError,
@@ -373,7 +373,7 @@ class _PeekStats extends StatelessWidget {
   final bool metric;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     if (routing) {
       return const Align(
@@ -386,13 +386,25 @@ class _PeekStats extends StatelessWidget {
       );
     }
     if (routeError != null) {
-      return Text(
-        routeError!,
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-        style: theme.textTheme.bodySmall?.copyWith(
-          color: theme.colorScheme.error,
-        ),
+      return Row(
+        children: [
+          Expanded(
+            child: Text(
+              routeError!,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.error,
+              ),
+            ),
+          ),
+          TextButton.icon(
+            onPressed: () =>
+                ref.read(mapSessionProvider.notifier).computeRoute(),
+            icon: const Icon(Icons.refresh, size: 18),
+            label: const Text('Retry'),
+          ),
+        ],
       );
     }
     if (route == null) {

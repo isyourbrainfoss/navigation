@@ -34,6 +34,40 @@ class TileCacheService {
   Stream<DownloadProgress> get progress => _progressController.stream;
   bool get isDownloading => _downloading;
 
+  /// True while map tiles keep failing to load from the network (offline,
+  /// DNS, server refusing us). The map shows a banner instead of silently
+  /// rendering blank squares. Cleared by the next successful fetch.
+  final ValueNotifier<bool> tilesFailing = ValueNotifier(false);
+  int _consecutiveTileFailures = 0;
+
+  /// Failures in a row before [tilesFailing] flips; a single slow tile is
+  /// not worth a banner.
+  static const tileFailuresBeforeBanner = 4;
+
+  @visibleForTesting
+  void reportTileFetch({required bool ok}) {
+    if (ok) {
+      _consecutiveTileFailures = 0;
+      if (tilesFailing.value) tilesFailing.value = false;
+    } else {
+      _consecutiveTileFailures++;
+      if (_consecutiveTileFailures >= tileFailuresBeforeBanner &&
+          !tilesFailing.value) {
+        tilesFailing.value = true;
+      }
+    }
+  }
+
+  /// Soft cap for tiles cached while browsing, in bytes; 0 = no limit.
+  /// Tiles inside saved offline regions never count against eviction: only
+  /// the least recently used browsed tiles are removed, and only once the
+  /// cache is over the cap.
+  int maxCacheBytes = defaultMaxCacheBytes;
+  static const defaultMaxCacheBytes = 500 * 1024 * 1024;
+  static const _trimEveryWrites = 300;
+  int _writesSinceTrim = 0;
+  Future<CacheTrimResult>? _trimming;
+
   /// [rootOverride] is for tests; the app uses the support directory.
   Future<void> init({Directory? rootOverride}) async {
     if (rootOverride != null) {
@@ -45,6 +79,86 @@ class TileCacheService {
     await _root!.create(recursive: true);
     await _purgeLegacyCartoTilesOnce();
     await _loadRegionsMeta();
+  }
+
+  /// Bytes and tile count currently in the cache (all styles).
+  Future<({int bytes, int tiles})> cacheUsage() async {
+    if (_root == null) return (bytes: 0, tiles: 0);
+    var bytes = 0;
+    var tiles = 0;
+    for (final f in await _tileFiles()) {
+      bytes += f.size;
+      tiles++;
+    }
+    return (bytes: bytes, tiles: tiles);
+  }
+
+  Future<List<({File file, int size, DateTime modified, String key})>>
+      _tileFiles() async {
+    final out = <({File file, int size, DateTime modified, String key})>[];
+    for (final style in allTileStyleKeys) {
+      final dir = Directory(p.join(root.path, style));
+      if (!await dir.exists()) continue;
+      await for (final e in dir.list(recursive: true, followLinks: false)) {
+        if (e is! File || !e.path.endsWith('.png')) continue;
+        try {
+          final st = await e.stat();
+          final rel = p.split(p.relative(e.path, from: dir.path));
+          if (rel.length != 3) continue;
+          final key = '${rel[0]}/${rel[1]}/${p.basenameWithoutExtension(rel[2])}';
+          out.add((file: e, size: st.size, modified: st.modified, key: key));
+        } catch (_) {}
+      }
+    }
+    return out;
+  }
+
+  Set<String> _regionTileKeys() {
+    final keys = <String>{};
+    for (final r in regions) {
+      for (var z = r.minZoom; z <= r.maxZoom; z++) {
+        for (final t in GeoMath.tilesForCircle(
+          center: r.center,
+          radiusMeters: r.radiusMeters,
+          z: z,
+        )) {
+          keys.add('${t.z}/${t.x}/${t.y}');
+        }
+      }
+    }
+    return keys;
+  }
+
+  /// Evict least-recently-used browsed tiles until the cache is at 90 % of
+  /// [maxBytes] (default [maxCacheBytes]). No-op when under the cap or when
+  /// the cap is 0. Tiles inside saved offline regions are never evicted.
+  Future<CacheTrimResult> trimToCap({int? maxBytes}) {
+    return _trimming ??= _trim(maxBytes ?? maxCacheBytes).whenComplete(() {
+      _trimming = null;
+    });
+  }
+
+  Future<CacheTrimResult> _trim(int cap) async {
+    if (_root == null || cap <= 0) return const CacheTrimResult(0, 0);
+    final files = await _tileFiles();
+    var total = files.fold<int>(0, (a, f) => a + f.size);
+    if (total <= cap) return const CacheTrimResult(0, 0);
+    final protected = _regionTileKeys();
+    final candidates = files.where((f) => !protected.contains(f.key)).toList()
+      ..sort((a, b) => a.modified.compareTo(b.modified));
+    final target = (cap * 0.9).floor();
+    var removed = 0;
+    var freed = 0;
+    for (final f in candidates) {
+      if (total <= target) break;
+      try {
+        await f.file.delete();
+        total -= f.size;
+        freed += f.size;
+        removed++;
+      } catch (_) {}
+    }
+    return CacheTrimResult(removed, freed);
   }
 
   /// Marker written once the legacy `light` / `dark` dirs have been purged.
@@ -143,9 +257,24 @@ class TileCacheService {
           return null;
         }
       } catch (_) {}
+      _touch(f);
       return f;
     }
     return null;
+  }
+
+  /// Mark a cached tile as recently used (at most once per day per tile) so
+  /// cap eviction removes tiles nobody looks at any more.
+  void _touch(File f) {
+    unawaited(() async {
+      try {
+        final m = await f.lastModified();
+        final now = DateTime.now();
+        if (now.difference(m) > const Duration(days: 1)) {
+          await f.setLastModified(now);
+        }
+      } catch (_) {}
+    }());
   }
 
   Future<void> writeTile(
@@ -159,6 +288,10 @@ class TileCacheService {
     final file = tileFile(styleKey, z, x, y);
     await file.parent.create(recursive: true);
     await _writeAtomically(file, bytes);
+    if (++_writesSinceTrim >= _trimEveryWrites && !_downloading) {
+      _writesSinceTrim = 0;
+      unawaited(trimToCap());
+    }
   }
 
   int estimateTiles({
@@ -372,6 +505,7 @@ class TileCacheService {
   }
 
   Future<void> dispose() async {
+    tilesFailing.dispose();
     await _progressController.close();
     _client.close();
   }
@@ -497,13 +631,17 @@ class _OfflineAwareImage extends ImageProvider<_OfflineAwareImage> {
       if (resp.statusCode == 200 &&
           resp.bodyBytes.isNotEmpty &&
           !isTilePlaceholderResponse(resp)) {
+        service.reportTileFetch(ok: true);
         try {
           await service.writeTile(styleKey, z, x, y, resp.bodyBytes);
         } catch (_) {}
         final buffer = await ui.ImmutableBuffer.fromUint8List(resp.bodyBytes);
         return await decode(buffer);
       }
+      // 404 above the source's max zoom is normal; anything else is not.
+      service.reportTileFetch(ok: resp.statusCode == 404);
     } catch (e) {
+      service.reportTileFetch(ok: false);
       debugPrint('tile fetch failed: ${redactTileKey('$e')}');
     }
 
@@ -532,4 +670,10 @@ class _OfflineAwareImage extends ImageProvider<_OfflineAwareImage> {
 
   @override
   int get hashCode => Object.hash(styleKey, urlTemplate, coordinates);
+}
+
+class CacheTrimResult {
+  const CacheTrimResult(this.removedTiles, this.freedBytes);
+  final int removedTiles;
+  final int freedBytes;
 }
