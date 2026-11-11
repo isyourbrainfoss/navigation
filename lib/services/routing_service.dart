@@ -81,10 +81,14 @@ class RoutingService {
       '&alternatives=$alt',
     );
 
-    final response = await _client.get(
-      uri,
-      headers: {'User-Agent': AppConstants.userAgent},
-    );
+    // A stalled request used to hang forever; during navigation that kept
+    // the reroute in-flight flag set, so no further reroute ever happened.
+    final response = await _client
+        .get(uri, headers: {'User-Agent': AppConstants.userAgent})
+        .timeout(
+          AppConstants.httpTimeout,
+          onTimeout: () => throw RoutingException('Routing timed out'),
+        );
     if (response.statusCode != 200) {
       throw RoutingException('Routing failed (${response.statusCode})');
     }
