@@ -76,7 +76,7 @@ class CompassRose extends StatelessWidget {
       button: true,
       label: 'Compass. Tap to turn the map north up.',
       child: Tooltip(
-        message: 'North up',
+        message: 'Compass: tap for north up',
         child: Glass(
           borderRadius: 28,
           child: InkWell(
@@ -119,15 +119,15 @@ class _RosePainter extends CustomPainter {
         text: 'N',
         style: TextStyle(
           color: _north,
-          fontSize: 11,
+          fontSize: 14,
           height: 1,
           fontWeight: FontWeight.w900,
         ),
       ),
       textDirection: TextDirection.ltr,
     )..layout();
-    tp.paint(canvas, Offset(c.dx - tp.width / 2, 5));
-    final tipN = Offset(c.dx, 5 + tp.height + 2);
+    tp.paint(canvas, Offset(c.dx - tp.width / 2, 3));
+    final tipN = Offset(c.dx, 3 + tp.height + 2);
     final tipS = Offset(c.dx, size.height - 10);
     final northHalf = Path()
       ..moveTo(tipN.dx, tipN.dy)
@@ -194,6 +194,31 @@ class RouteChevron extends StatelessWidget {
     return Transform.rotate(
       angle: bearing * math.pi / 180.0,
       child: Icon(Icons.navigation, size: 16, color: color),
+    );
+  }
+}
+
+/// Small caption under a map button ("Course up", "North up", "Free").
+class MapModeLabel extends StatelessWidget {
+  const MapModeLabel({super.key, required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Glass(
+      borderRadius: 10,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        child: Text(
+          text,
+          key: const Key('map_mode_label'),
+          style: theme.textTheme.labelSmall?.copyWith(
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
     );
   }
 }
