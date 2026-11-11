@@ -82,5 +82,8 @@ abstract final class AppConstants {
   static const tileDownloadConcurrency = 2;
   static const tileDownloadDelayMs = 250;
 
+  /// Upper bound for routing / search / geocoding requests.
+  static const httpTimeout = Duration(seconds: 20);
+
   static const minTouchDp = 56.0;
 }

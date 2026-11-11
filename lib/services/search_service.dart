@@ -148,10 +148,12 @@ class SearchService {
 
     final uri =
         Uri.parse(AppConstants.photonBase).replace(queryParameters: params);
-    final response = await _client.get(
-      uri,
-      headers: {'User-Agent': AppConstants.userAgent},
-    );
+    final response = await _client
+        .get(uri, headers: {'User-Agent': AppConstants.userAgent})
+        .timeout(
+          AppConstants.httpTimeout,
+          onTimeout: () => throw SearchException('Search timed out'),
+        );
     if (response.statusCode != 200) {
       throw SearchException('Search failed (${response.statusCode})');
     }
@@ -177,10 +179,9 @@ class SearchService {
     final uri =
         Uri.parse(AppConstants.photonBase).replace(queryParameters: params);
     try {
-      final response = await _client.get(
-        uri,
-        headers: {'User-Agent': AppConstants.userAgent},
-      );
+      final response = await _client
+          .get(uri, headers: {'User-Agent': AppConstants.userAgent})
+          .timeout(AppConstants.httpTimeout);
       if (response.statusCode == 200) {
         final body = jsonDecode(response.body) as Map<String, dynamic>;
         final features = body['features'] as List<dynamic>? ?? [];
@@ -204,10 +205,9 @@ class SearchService {
       },
     );
     try {
-      final response = await _client.get(
-        uri,
-        headers: {'User-Agent': AppConstants.userAgent},
-      );
+      final response = await _client
+          .get(uri, headers: {'User-Agent': AppConstants.userAgent})
+          .timeout(AppConstants.httpTimeout);
       if (response.statusCode != 200) return Place.fromLatLng(ll);
       final body = jsonDecode(response.body) as Map<String, dynamic>;
       final features = body['features'] as List<dynamic>? ?? [];
@@ -239,7 +239,7 @@ class SearchService {
           'Content-Type': 'application/x-www-form-urlencoded',
         },
         body: 'data=${Uri.encodeQueryComponent(query)}',
-      );
+      ).timeout(AppConstants.httpTimeout);
       if (response.statusCode != 200) return const [];
       final body = jsonDecode(response.body) as Map<String, dynamic>;
       final elements = body['elements'] as List<dynamic>? ?? [];
