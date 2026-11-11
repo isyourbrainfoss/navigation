@@ -55,13 +55,7 @@ if [[ ! -x "$BUNDLE/navigation" ]]; then
   exit 1
 fi
 
-# Icon from Android launcher assets
-ICON_SRC="$APP_DIR/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png"
-if [[ ! -f "$ICON_SRC" ]]; then
-  ICON_SRC="$APP_DIR/android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png"
-fi
-ICON_DST="$FLATPAK_DIR/com.isyourbrainfoss.Navigation.png"
-cp "$ICON_SRC" "$ICON_DST"
+# Launcher icons live in flatpak/icons/hicolor (regenerate with tool/generate_icons.sh).
 
 echo "==> Packaging Flutter bundle archive"
 tar -czf "$FLATPAK_DIR/navigation-linux-bundle.tar.gz" -C "$BUNDLE" .
