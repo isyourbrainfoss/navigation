@@ -9,6 +9,19 @@ import '../map/widgets/glass.dart';
 import 'instruction_sheet.dart';
 import 'lane_strip.dart';
 
+/// Sizes for the guidance chrome. Kept tight so that on a phone the
+/// maneuver card, ETA bar and off-route banner leave most of the map, and
+/// the position puck, visible.
+abstract final class GuidanceSizes {
+  static const iconBox = 56.0;
+  static const icon = 36.0;
+  static const distanceFont = 34.0;
+  static const instructionFont = 18.0;
+
+  /// Mute / Stop in the ETA bar and Keep route: Material's 48 dp minimum.
+  static const barButton = 48.0;
+}
+
 class GuidanceBanner extends ConsumerWidget {
   const GuidanceBanner({super.key});
 
@@ -70,7 +83,7 @@ class GuidanceBanner extends ConsumerWidget {
             onTap: () => showInstructionSheet(context),
             borderRadius: BorderRadius.circular(24),
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 12, 14),
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -78,11 +91,12 @@ class GuidanceBanner extends ConsumerWidget {
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       Container(
-                        width: 72,
-                        height: 72,
+                        key: const Key('maneuver_icon_box'),
+                        width: GuidanceSizes.iconBox,
+                        height: GuidanceSizes.iconBox,
                         decoration: BoxDecoration(
                           color: Colors.white.withValues(alpha: 0.16),
-                          borderRadius: BorderRadius.circular(20),
+                          borderRadius: BorderRadius.circular(16),
                         ),
                         child: Icon(
                           arrived
@@ -91,11 +105,11 @@ class GuidanceBanner extends ConsumerWidget {
                                   type: step?.type,
                                   modifier: step?.modifier,
                                 ),
-                          size: 44,
+                          size: GuidanceSizes.icon,
                           color: onPrimary,
                         ),
                       ),
-                      const SizedBox(width: 14),
+                      const SizedBox(width: 12),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -108,8 +122,8 @@ class GuidanceBanner extends ConsumerWidget {
                                 ),
                                 style: theme.textTheme.displaySmall?.copyWith(
                                   color: onPrimary,
-                                  height: 0.95,
-                                  fontSize: 42,
+                                  height: 1.0,
+                                  fontSize: GuidanceSizes.distanceFont,
                                   fontWeight: FontWeight.w800,
                                 ),
                               ),
@@ -119,15 +133,16 @@ class GuidanceBanner extends ConsumerWidget {
                                   : (step?.text ?? 'Continue'),
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.titleLarge?.copyWith(
+                              style: theme.textTheme.titleMedium?.copyWith(
                                 color: onPrimary,
+                                fontSize: GuidanceSizes.instructionFont,
                                 fontWeight: FontWeight.w700,
                                 height: 1.15,
                               ),
                             ),
                             if (!arrived && approaching) ...[
                               Padding(
-                                padding: const EdgeInsets.only(top: 4),
+                                padding: const EdgeInsets.only(top: 2),
                                 child: Text(
                                   'Destination ahead',
                                   maxLines: 1,
@@ -149,7 +164,7 @@ class GuidanceBanner extends ConsumerWidget {
                                 ),
                             ] else if (!arrived && thenNext != null)
                               Padding(
-                                padding: const EdgeInsets.only(top: 4),
+                                padding: const EdgeInsets.only(top: 2),
                                 child: Text(
                                   thenLine(thenNext.text),
                                   maxLines: 1,
@@ -165,12 +180,12 @@ class GuidanceBanner extends ConsumerWidget {
                     ],
                   ),
                   if (!arrived && step != null && step.lanes.isNotEmpty) ...[
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 6),
                     LaneStrip(lanes: step.lanes),
                   ],
                   if (session.rerouting)
                     const Padding(
-                      padding: EdgeInsets.only(top: 10),
+                      padding: EdgeInsets.only(top: 6),
                       child: LinearProgressIndicator(
                         minHeight: 3,
                         color: Colors.white,
@@ -181,9 +196,11 @@ class GuidanceBanner extends ConsumerWidget {
             ),
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 6),
         Glass(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          key: const Key('guidance_eta_bar'),
+          borderRadius: 14,
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
           child: Row(
             children: [
               // Wraps instead of overflowing on narrow phones. Current speed
@@ -214,8 +231,8 @@ class GuidanceBanner extends ConsumerWidget {
                 tooltip: session.muted ? 'Unmute' : 'Mute',
                 style: IconButton.styleFrom(
                   minimumSize: const Size(
-                    AppConstants.minTouchDp,
-                    AppConstants.minTouchDp,
+                    GuidanceSizes.barButton,
+                    GuidanceSizes.barButton,
                   ),
                 ),
                 onPressed: () async {
@@ -247,8 +264,8 @@ class GuidanceBanner extends ConsumerWidget {
                   tooltip: 'Stop',
                   style: IconButton.styleFrom(
                     minimumSize: const Size(
-                      AppConstants.minTouchDp,
-                      AppConstants.minTouchDp,
+                      GuidanceSizes.barButton,
+                      GuidanceSizes.barButton,
                     ),
                   ),
                   onPressed: () => _confirmStop(context, ref),
@@ -322,4 +339,65 @@ String thenLine(String instruction) {
       ? first.toLowerCase()
       : first;
   return 'Then $lower${t.substring(1)}';
+}
+
+/// One-line off-route notice with a high-contrast "Keep route" button.
+class OffRouteBanner extends StatelessWidget {
+  const OffRouteBanner({
+    super.key,
+    required this.rerouting,
+    required this.onKeepRoute,
+  });
+
+  final bool rerouting;
+  final VoidCallback onKeepRoute;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      key: const Key('off_route_banner'),
+      color: scheme.tertiaryContainer,
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 2, 4, 2),
+        child: Row(
+          children: [
+            Icon(
+              Icons.wrong_location_outlined,
+              size: 20,
+              color: scheme.onTertiaryContainer,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                rerouting ? 'Recalculating…' : 'Off route · finding a new path',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      color: scheme.onTertiaryContainer,
+                      fontWeight: FontWeight.w600,
+                    ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            // Filled, so it reads on the tinted banner (a text button in the
+            // same hue was hard to see).
+            FilledButton(
+              key: const Key('off_route_stay'),
+              style: FilledButton.styleFrom(
+                backgroundColor: scheme.onTertiaryContainer,
+                foregroundColor: scheme.tertiaryContainer,
+                minimumSize: const Size(64, GuidanceSizes.barButton),
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                tapTargetSize: MaterialTapTargetSize.padded,
+              ),
+              onPressed: onKeepRoute,
+              child: const Text('Keep route'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

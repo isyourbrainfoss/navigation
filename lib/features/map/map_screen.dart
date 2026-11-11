@@ -1083,49 +1083,12 @@ class _MapScreenState extends ConsumerState<MapScreen>
                 session.phase == NavPhase.navigating &&
                 !session.holdRoute)
               Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Material(
-                  color: Theme.of(context).colorScheme.tertiaryContainer,
-                  borderRadius: BorderRadius.circular(12),
-                  child: Padding(
-                    padding: const EdgeInsets.all(10),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            session.rerouting
-                                ? 'Recalculating…'
-                                : 'Off route — finding a new path',
-                            style: Theme.of(context).textTheme.labelLarge
-                                ?.copyWith(
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.onTertiaryContainer,
-                                ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        // Filled, so it reads on the tinted banner (a text
-                        // button in the same hue was hard to see).
-                        FilledButton(
-                          key: const Key('off_route_stay'),
-                          style: FilledButton.styleFrom(
-                            backgroundColor: Theme.of(
-                              context,
-                            ).colorScheme.onTertiaryContainer,
-                            foregroundColor: Theme.of(
-                              context,
-                            ).colorScheme.tertiaryContainer,
-                            minimumSize: const Size(64, 44),
-                          ),
-                          onPressed: () => ref
-                              .read(mapSessionProvider.notifier)
-                              .stayOnThisRoute(),
-                          child: const Text('Keep route'),
-                        ),
-                      ],
-                    ),
-                  ),
+                padding: const EdgeInsets.only(top: 6),
+                child: OffRouteBanner(
+                  rerouting: session.rerouting,
+                  onKeepRoute: () => ref
+                      .read(mapSessionProvider.notifier)
+                      .stayOnThisRoute(),
                 ),
               ),
             VoiceStatusBanner(
