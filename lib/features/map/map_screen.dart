@@ -1041,6 +1041,19 @@ class _MapScreenState extends ConsumerState<MapScreen>
           onPressed: _recenter,
           highlighted: session.followUser,
         ),
+        // While navigating, say which way the map is oriented: the compass
+        // hides in course-up, so the mode was otherwise invisible.
+        if (session.phase == NavPhase.navigating)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: MapModeLabel(
+              text: !session.followUser
+                  ? 'Free'
+                  : session.followMode == FollowMode.courseUp
+                      ? 'Course up'
+                      : 'North up',
+            ),
+          ),
         if (session.phase != NavPhase.navigating &&
             session.phase != NavPhase.arrived) ...[
           const SizedBox(height: 10),
