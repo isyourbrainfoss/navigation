@@ -183,6 +183,26 @@ class SettingsScreen extends ConsumerWidget {
             },
           ),
           const _SectionTitle('Advanced'),
+          _enumTile<int>(
+            title: 'Map cache limit',
+            value: AppSettings.tileCacheLimitChoicesMb
+                    .contains(settings.tileCacheLimitMb)
+                ? settings.tileCacheLimitMb
+                : 500,
+            values: AppSettings.tileCacheLimitChoicesMb,
+            label: (mb) => mb == 0
+                ? 'No limit'
+                : mb >= 1000
+                    ? '${mb ~/ 1000} GB'
+                    : '$mb MB',
+            onChanged: (mb) async {
+              await n.update(settings.copyWith(tileCacheLimitMb: mb));
+              final tiles = ref.read(tileCacheServiceProvider);
+              tiles.maxCacheBytes = mb * 1024 * 1024;
+              await tiles.trimToCap();
+            },
+          ),
+          const _CacheUsageTile(),
           ListTile(
             title: const Text('CARTO basemap key'),
             subtitle: Text(
@@ -338,6 +358,34 @@ class _SectionTitle extends StatelessWidget {
               fontWeight: FontWeight.w700,
             ),
       ),
+    );
+  }
+}
+
+/// Shows how much disk the tile cache uses. Read-only: browsing tiles beyond
+/// the limit are evicted oldest-first; offline regions are never touched.
+class _CacheUsageTile extends ConsumerWidget {
+  const _CacheUsageTile();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final tiles = ref.watch(tileCacheServiceProvider);
+    return FutureBuilder<({int bytes, int tiles})>(
+      future: tiles.cacheUsage(),
+      builder: (context, snap) {
+        final u = snap.data;
+        return ListTile(
+          dense: true,
+          title: const Text('Cached map tiles'),
+          subtitle: Text(
+            u == null
+                ? 'Measuring…'
+                : '${(u.bytes / (1024 * 1024)).toStringAsFixed(1)} MB in '
+                    '${u.tiles} tiles. Over the limit, the oldest browsed '
+                    'tiles are removed; saved offline areas are kept.',
+          ),
+        );
+      },
     );
   }
 }

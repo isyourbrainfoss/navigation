@@ -252,4 +252,92 @@ void main() {
       expect(leftovers, isEmpty);
     });
   });
+
+  group('cache limit', () {
+    void put(TileCacheService svc, String style, int z, int x, int y,
+        int size, DateTime modified) {
+      svc.tileFile(style, z, x, y)
+        ..parent.createSync(recursive: true)
+        ..writeAsBytesSync(List.filled(size, 1))
+        ..setLastModifiedSync(modified);
+    }
+
+    test('no-op under the cap or with no limit', () async {
+      final svc = TileCacheService();
+      await svc.init(rootOverride: tmp);
+      put(svc, 'osm', 10, 1, 1, 1000, DateTime(2026));
+      expect((await svc.trimToCap(maxBytes: 5000)).removedTiles, 0);
+      expect((await svc.trimToCap(maxBytes: 0)).removedTiles, 0);
+      expect(svc.tileFile('osm', 10, 1, 1).existsSync(), isTrue);
+      final usage = await svc.cacheUsage();
+      expect(usage.bytes, 1000);
+      expect(usage.tiles, 1);
+    });
+
+    test('evicts least recently used browsed tiles to 90 % of the cap',
+        () async {
+      final svc = TileCacheService();
+      await svc.init(rootOverride: tmp);
+      for (var i = 0; i < 10; i++) {
+        put(svc, 'osm', 10, i, 0, 1000, DateTime(2026, 1, 1 + i));
+      }
+      final r = await svc.trimToCap(maxBytes: 6000);
+      // 10 000 bytes -> at most 5 400: the five oldest go.
+      expect(r.removedTiles, 5);
+      expect(r.freedBytes, 5000);
+      for (var i = 0; i < 10; i++) {
+        expect(svc.tileFile('osm', 10, i, 0).existsSync(), i >= 5,
+            reason: 'tile $i');
+      }
+    });
+
+    test('never evicts tiles inside a saved offline region', () async {
+      final region = OfflineRegion(
+        id: 'r1',
+        name: 'Lørenskog',
+        centerLat: 59.93,
+        centerLon: 10.95,
+        radiusMeters: 500,
+        minZoom: 14,
+        maxZoom: 14,
+        createdAtMs: 0,
+      );
+      File(p.join(tmp.path, 'regions.json'))
+          .writeAsStringSync(jsonEncode([region.toJson()]));
+      final svc = TileCacheService();
+      await svc.init(rootOverride: tmp);
+      final inRegion = GeoMath.tilesForCircle(
+        center: region.center,
+        radiusMeters: region.radiusMeters,
+        z: 14,
+      ).first;
+      // The region tile is the oldest file, yet it must survive.
+      put(svc, cartoLightStyleKey, inRegion.z, inRegion.x, inRegion.y, 4000,
+          DateTime(2020));
+      put(svc, 'osm', 5, 1, 1, 4000, DateTime(2026));
+      put(svc, 'osm', 5, 2, 1, 4000, DateTime(2026, 2));
+      await svc.trimToCap(maxBytes: 9000);
+      expect(
+        svc
+            .tileFile(cartoLightStyleKey, inRegion.z, inRegion.x, inRegion.y)
+            .existsSync(),
+        isTrue,
+      );
+      expect(svc.tileFile('osm', 5, 1, 1).existsSync(), isFalse);
+      expect(svc.tileFile('osm', 5, 2, 1).existsSync(), isTrue);
+    });
+  });
+
+  test('tilesFailing flips after repeated failures and clears on success',
+      () {
+    final svc = TileCacheService();
+    for (var i = 0; i < TileCacheService.tileFailuresBeforeBanner - 1; i++) {
+      svc.reportTileFetch(ok: false);
+    }
+    expect(svc.tilesFailing.value, isFalse);
+    svc.reportTileFetch(ok: false);
+    expect(svc.tilesFailing.value, isTrue);
+    svc.reportTileFetch(ok: true);
+    expect(svc.tilesFailing.value, isFalse);
+  });
 }
