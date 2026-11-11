@@ -12,6 +12,7 @@ import 'package:latlong2/latlong.dart';
 import '../../core/constants.dart';
 import '../../core/format.dart';
 import '../../core/geometry.dart';
+import '../../core/map_orientation.dart';
 import '../../core/map_style.dart';
 import '../../core/theme/navigation_theme.dart';
 import '../../models/camera_view.dart';
@@ -58,6 +59,11 @@ class _MapScreenState extends ConsumerState<MapScreen>
   double _camRotTarget = 0;
   bool _smoothFollow = false;
 
+  /// Re-checks once in a while so "Waiting for GPS…" can turn into a clear
+  /// "no fix" message instead of spinning forever.
+  Timer? _gpsWaitTimer;
+  final DateTime _openedAt = DateTime.now();
+
   /// Full OSM attribution is shown until the user first interacts with the
   /// map; it then collapses to "©" (tap to expand again).
   bool _attributionCollapsed = false;
@@ -65,7 +71,8 @@ class _MapScreenState extends ConsumerState<MapScreen>
   late final double _initialZoom;
   late final double _initialRotation;
 
-  static const _fallback = LatLng(52.52, 13.405);
+  /// Shown before the first fix on a fresh install: Oslo, city overview.
+  static const _fallback = LatLng(59.9139, 10.7522);
 
   @override
   void initState() {
@@ -80,21 +87,35 @@ class _MapScreenState extends ConsumerState<MapScreen>
       _camTarget = _initialCenter;
       _camZoom = saved.zoom;
       _camZoomTarget = saved.zoom;
-      _mapRotation = saved.rotation;
-      _camRotTarget = saved.rotation;
-      _didCenterOnUser = true;
+      _mapRotation = GeoMath.normalizeSignedDegrees(saved.rotation);
+      _camRotTarget = _mapRotation;
     } else {
       _initialCenter = _fallback;
-      _initialZoom = AppConstants.defaultZoom;
+      _initialZoom = AppConstants.overviewZoom;
       _initialRotation = 0;
     }
     _ticker = createTicker(_onCameraTick)..start();
+    _gpsWaitTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (!mounted) return;
+      final location = ref.read(locationServiceProvider);
+      final fixAt = location.lastFixAt;
+      // Repaint while waiting for a first fix or while a fix is going stale.
+      if (fixAt == null ||
+          DateTime.now().difference(fixAt) > AppConstants.staleFixAfter) {
+        setState(() {});
+      }
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _restoreCamera();
       _bootstrapLocation();
       final initial = ref.read(initialDestinationProvider);
       if (initial != null) {
-        ref.read(mapSessionProvider.notifier).selectDestination(initial);
+        ref
+            .read(mapSessionProvider.notifier)
+            .selectDestination(initial)
+            .then((_) {
+          if (mounted) _fitRoute();
+        });
       }
     });
   }
@@ -118,11 +139,22 @@ class _MapScreenState extends ConsumerState<MapScreen>
     if (!_smoothFollow || _camTarget == null || !mounted) return;
     _camPos ??= _camTarget;
     const k = 0.2;
+    final rot = GeoMath.lerpAngleDegrees(_mapRotation, _camRotTarget, k);
+    final settled = GeoMath.haversineMeters(_camPos!, _camTarget!) < 0.05 &&
+        (_camZoomTarget - _camZoom).abs() < 0.002 &&
+        rot == _mapRotation;
+    // Idle once the camera has arrived: re-sending the same camera every
+    // frame kept the GPU busy and rebuilt the whole screen 60× a second.
+    if (settled) return;
     final next = GeoMath.lerpLatLng(_camPos!, _camTarget!, k);
-    _camZoom += (_camZoomTarget - _camZoom) * k;
-    _mapRotation = GeoMath.lerpAngleDegrees(_mapRotation, _camRotTarget, k);
-    _camPos = next;
-    _mapController.moveAndRotate(next, _camZoom, _mapRotation);
+    var zoom = _camZoom + (_camZoomTarget - _camZoom) * k;
+    if ((_camZoomTarget - zoom).abs() < 0.002) zoom = _camZoomTarget;
+    _camZoom = zoom;
+    _mapRotation = rot;
+    _camPos = GeoMath.haversineMeters(next, _camTarget!) < 0.05
+        ? _camTarget
+        : next;
+    _mapController.moveAndRotate(_camPos!, _camZoom, _mapRotation);
   }
 
   double _zoomForNav({
@@ -146,13 +178,29 @@ class _MapScreenState extends ConsumerState<MapScreen>
     _camTarget = _camPos;
     _camZoom = saved.zoom;
     _camZoomTarget = saved.zoom;
-    _mapRotation = saved.rotation;
-    _camRotTarget = saved.rotation;
+    _mapRotation = GeoMath.normalizeSignedDegrees(saved.rotation);
+    _camRotTarget = _mapRotation;
     _mapController.moveAndRotate(
       LatLng(saved.latitude, saved.longitude),
       saved.zoom,
-      saved.rotation,
+      _mapRotation,
     );
+  }
+
+  /// First fix of this run: show where the user is (at street level unless
+  /// the restored camera was already zoomed in), so the app does not open on
+  /// wherever the map was last left.
+  void _centerOnFirstFix(LocationFix fix, bool followOnStart) {
+    _didCenterOnUser = true;
+    if (!followOnStart) return;
+    if (ref.read(mapSessionProvider).phase != NavPhase.browsing) return;
+    final z = _mapController.camera.zoom;
+    final zoom = z >= AppConstants.recenterMinZoom ? z : AppConstants.defaultZoom;
+    _camPos = fix.position;
+    _camTarget = fix.position;
+    _camZoom = zoom;
+    _camZoomTarget = zoom;
+    _mapController.moveAndRotate(fix.position, zoom, _mapRotation);
   }
 
   void _persistCamera() {
@@ -178,11 +226,7 @@ class _MapScreenState extends ConsumerState<MapScreen>
       await location.start();
       final fix = await location.getCurrent();
       if (fix != null && mounted && !_didCenterOnUser) {
-        _didCenterOnUser = true;
-        if (settings.followOnStart &&
-            ref.read(settingsRepositoryProvider).loadCamera() == null) {
-          _mapController.move(fix.position, AppConstants.defaultZoom);
-        }
+        _centerOnFirstFix(fix, settings.followOnStart);
       }
     }
     _fixSub = location.fixes.listen(_onFix);
@@ -225,8 +269,7 @@ class _MapScreenState extends ConsumerState<MapScreen>
     recorder.addFix(fix);
 
     if (!_didCenterOnUser && session.followUser) {
-      _didCenterOnUser = true;
-      _mapController.move(fix.position, AppConstants.defaultZoom);
+      _centerOnFirstFix(fix, settings.followOnStart);
     }
 
     if (session.phase == NavPhase.navigating && session.route != null) {
@@ -282,15 +325,25 @@ class _MapScreenState extends ConsumerState<MapScreen>
             : progress.snapped;
         _camTarget = center;
         _camZoomTarget = zoom;
-        _camRotTarget =
-            session.followMode == FollowMode.courseUp ? -heading : 0;
+        _camRotTarget = session.followMode == FollowMode.courseUp
+            ? GeoMath.normalizeSignedDegrees(-heading)
+            : 0;
         _smoothFollow = true;
         _camPos ??= center;
       }
     } else if (session.followUser && session.phase == NavPhase.browsing) {
       _camTarget = fix.position;
       _camZoomTarget = _mapController.camera.zoom;
-      _camRotTarget = 0;
+      // Course-up while browsing keeps following the heading (it used to
+      // snap back to north on the very next fix). Without a heading, hold
+      // the current orientation rather than guessing.
+      if (session.followMode == FollowMode.courseUp) {
+        if (fix.heading != null) {
+          _camRotTarget = courseUpRotation(fix.heading!);
+        }
+      } else {
+        _camRotTarget = 0;
+      }
       _smoothFollow = true;
       _camPos ??= fix.position;
     }
@@ -301,6 +354,7 @@ class _MapScreenState extends ConsumerState<MapScreen>
     _persistCamera();
     WidgetsBinding.instance.removeObserver(this);
     _ticker?.dispose();
+    _gpsWaitTimer?.cancel();
     _fixSub?.cancel();
     _errorSub?.cancel();
     _mapController.dispose();
@@ -362,7 +416,13 @@ class _MapScreenState extends ConsumerState<MapScreen>
     final fix = location.lastFix ?? await location.getCurrent();
     if (fix != null && mounted) {
       final s = ref.read(mapSessionProvider);
-      final zoom = _mapController.camera.zoom;
+      final current = _mapController.camera.zoom;
+      // From a country/city overview, "my location" should land at street
+      // level; when already zoomed in, keep the user's zoom.
+      final zoom = s.phase == NavPhase.browsing &&
+              current < AppConstants.recenterMinZoom
+          ? AppConstants.defaultZoom
+          : current;
       _camZoom = zoom;
       _camZoomTarget = zoom;
       _camPos = fix.position;
@@ -373,21 +433,33 @@ class _MapScreenState extends ConsumerState<MapScreen>
         _mapController.moveAndRotate(fix.position, zoom, 0);
       } else {
         final heading = fix.heading ?? s.progress?.routeHeading ?? 0;
-        _mapRotation = -heading;
-        _camRotTarget = -heading;
+        _mapRotation = GeoMath.normalizeSignedDegrees(-heading);
+        _camRotTarget = _mapRotation;
         _mapController.moveAndRotate(fix.position, zoom, _mapRotation);
       }
     } else if (mounted) {
+      final permission = ref.read(locationPermissionProvider);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Waiting for GPS fix…')),
+        SnackBar(
+          content: Text(
+            permission == LocationPermissionState.granted
+                ? 'No GPS fix yet. Go outside or near a window; the map will '
+                    'center on you as soon as there is one.'
+                : 'Location is off. Turn on location to see where you are.',
+          ),
+        ),
       );
     }
   }
 
   void _northUp() {
+    // Also reset the eased target, or the follow camera would turn the map
+    // straight back to course-up on the next frame.
     _mapRotation = 0;
+    _camRotTarget = 0;
     _mapController.rotate(0);
     ref.read(mapSessionProvider.notifier).setFollowMode(FollowMode.northUp);
+    setState(() {});
   }
 
   void _fitRoute() {
@@ -473,8 +545,58 @@ class _MapScreenState extends ConsumerState<MapScreen>
     );
   }
 
+  /// Jump straight to the driver's view when guidance starts instead of
+  /// waiting for the next GPS fix (which may be seconds away).
+  void _onSessionChanged(MapSession? prev, MapSession next) {
+    final started = prev?.phase != NavPhase.navigating &&
+        next.phase == NavPhase.navigating;
+    if (!started) return;
+    final fix = ref.read(locationServiceProvider).lastFix;
+    final route = next.route;
+    if (fix == null && (route == null || route.geometry.isEmpty)) return;
+    final pos = fix?.position ?? route!.geometry.first;
+    final heading = fix?.heading ??
+        (route != null && route.geometry.length >= 2
+            ? GeoMath.bearingDegrees(route.geometry[0], route.geometry[1])
+            : 0.0);
+    _camPos = pos;
+    _camTarget = pos;
+    _camZoom = AppConstants.navZoom;
+    _camZoomTarget = AppConstants.navZoom;
+    _camRotTarget = next.followMode == FollowMode.courseUp
+        ? courseUpRotation(heading)
+        : 0;
+    _mapRotation = _camRotTarget;
+    _smoothFollow = true;
+    _mapController.moveAndRotate(pos, _camZoom, _mapRotation);
+  }
+
+  /// Start easing from where the user left the map, not from where the
+  /// follow camera last was (otherwise it believes it has already arrived).
+  void _syncEasingFromCamera() {
+    final cam = _mapController.camera;
+    _camPos = cam.center;
+    _camZoom = cam.zoom;
+    _mapRotation = GeoMath.normalizeSignedDegrees(cam.rotation);
+  }
+
+  void _resumeFollow() {
+    _noteActivity();
+    ref.read(mapSessionProvider.notifier).setFollowUser(true);
+    _syncEasingFromCamera();
+    _smoothFollow = true;
+    final s = ref.read(mapSessionProvider);
+    final fix = ref.read(locationServiceProvider).lastFix;
+    final target = s.progress?.snapped ?? fix?.position;
+    if (target != null) _camTarget = target;
+    if (s.phase == NavPhase.navigating) {
+      _camZoomTarget = AppConstants.navZoom;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    ref.listen<MapSession>(mapSessionProvider, _onSessionChanged);
     final session = ref.watch(mapSessionProvider);
     final settings = ref.watch(settingsProvider);
     final permission = ref.watch(locationPermissionProvider);
@@ -492,9 +614,20 @@ class _MapScreenState extends ConsumerState<MapScreen>
       urlTemplate: style.urlTemplate,
     );
 
+    // Rebuild on every fix so the puck moves even when the camera is not
+    // following (the service itself is not listenable).
+    ref.watch(locationFixProvider);
     final userPos = location.lastFix?.position;
     final accuracy = location.lastFix?.accuracyMeters;
-    final heading = location.lastFix?.heading;
+    final fixAge = location.lastFixAt == null
+        ? null
+        : DateTime.now().difference(location.lastFixAt!);
+    final fixStale = fixAge != null && fixAge > AppConstants.staleFixAfter;
+    final puckHeading = puckHeadingDegrees(
+      fixHeading: location.lastFix?.heading,
+      routeHeading: session.progress?.routeHeading,
+      navigating: session.phase == NavPhase.navigating,
+    );
     final landscape =
         MediaQuery.orientationOf(context) == Orientation.landscape;
     final padding = MediaQuery.paddingOf(context);
@@ -567,7 +700,11 @@ class _MapScreenState extends ConsumerState<MapScreen>
             }
           }
           if (event is MapEventRotate) {
-            setState(() => _mapRotation = _mapController.camera.rotation);
+            setState(
+              () => _mapRotation = GeoMath.normalizeSignedDegrees(
+                _mapController.camera.rotation,
+              ),
+            );
           }
         },
         onLongPress: _onLongPress,
@@ -681,6 +818,7 @@ class _MapScreenState extends ConsumerState<MapScreen>
                 width: 40,
                 height: 48,
                 alignment: Alignment.topCenter,
+                rotate: true,
                 child: const DestinationPin(),
               ),
             if (session.phase == NavPhase.browsing)
@@ -689,6 +827,7 @@ class _MapScreenState extends ConsumerState<MapScreen>
                   point: recent.latLng,
                   width: 22,
                   height: 22,
+                  rotate: true,
                   child: const Icon(Icons.circle, size: 10, color: Color(0xFF64748B)),
                 ),
             for (var i = 0; i < session.vias.length; i++)
@@ -696,6 +835,7 @@ class _MapScreenState extends ConsumerState<MapScreen>
                 point: session.vias[i].latLng,
                 width: 28,
                 height: 28,
+                rotate: true,
                 child: CircleAvatar(
                   radius: 12,
                   backgroundColor: const Color(0xFF7C3AED),
@@ -729,6 +869,7 @@ class _MapScreenState extends ConsumerState<MapScreen>
                 point: session.pin!.latLng,
                 width: 36,
                 height: 36,
+                rotate: true,
                 child: Icon(
                   Icons.push_pin,
                   color: Theme.of(context).colorScheme.tertiary,
@@ -741,12 +882,10 @@ class _MapScreenState extends ConsumerState<MapScreen>
                 width: 72,
                 height: 72,
                 child: UserPuck(
-                  headingDegrees: session.followUser &&
-                          session.followMode == FollowMode.courseUp
-                      ? 0
-                      : heading ?? session.progress?.routeHeading,
+                  headingDegrees: puckHeading,
                   accuracyMeters: accuracy,
                   navigating: session.phase == NavPhase.navigating,
+                  stale: fixStale && session.phase != NavPhase.navigating,
                 ),
               ),
           ],
@@ -756,7 +895,7 @@ class _MapScreenState extends ConsumerState<MapScreen>
             session.phase != NavPhase.arrived)
           Scalebar(
             alignment: Alignment.bottomLeft,
-            padding: EdgeInsets.fromLTRB(12, 0, 0, padding.bottom + 72),
+            padding: EdgeInsets.fromLTRB(12, 0, 0, padding.bottom + 108),
             textStyle: TextStyle(
               color: style.dark ? Colors.white : Colors.black87,
               fontSize: 12,
@@ -765,9 +904,22 @@ class _MapScreenState extends ConsumerState<MapScreen>
             lineColor: style.dark ? Colors.white : Colors.black87,
           ),
         Align(
-          alignment: Alignment.bottomRight,
+          // OSM requires the credit to stay visible: keep it clear of the
+          // search bar (browsing) and the route sheet (preview).
+          alignment: session.phase == NavPhase.browsing
+              ? Alignment.bottomLeft
+              : Alignment.bottomRight,
           child: Padding(
-            padding: EdgeInsets.only(right: 8, bottom: padding.bottom + 4),
+            padding: EdgeInsets.only(
+              left: 12,
+              right: 8,
+              bottom: switch (session.phase) {
+                NavPhase.browsing => padding.bottom + 76,
+                NavPhase.preview =>
+                  MediaQuery.sizeOf(context).height * 0.22 + 16,
+                _ => padding.bottom + 4,
+              },
+            ),
             child: AttributionChip(
               text: style.attribution,
               collapsed: _attributionCollapsed,
@@ -797,13 +949,37 @@ class _MapScreenState extends ConsumerState<MapScreen>
                     ),
                     const SizedBox(width: 8),
                     Text(
-                      'Waiting for GPS…',
+                      DateTime.now().difference(_openedAt) >
+                              AppConstants.gpsWaitWarnAfter
+                          ? 'No GPS fix yet — is location on?'
+                          : 'Waiting for GPS…',
                       style: Theme.of(context).textTheme.labelMedium,
                     ),
                   ],
                 ),
               )
             : const SizedBox.shrink())
+        : fixStale
+        ? Glass(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.gps_off,
+                  size: 16,
+                  color: Theme.of(context).colorScheme.error,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  session.phase == NavPhase.navigating
+                      ? 'GPS signal lost'
+                      : 'Last known location · ${formatAge(fixAge)}',
+                  style: Theme.of(context).textTheme.labelMedium,
+                ),
+              ],
+            ),
+          )
         : Glass(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             child: Text(
@@ -814,7 +990,10 @@ class _MapScreenState extends ConsumerState<MapScreen>
                     gnss.altitudeMeters!,
                     metric: settings.metricUnits,
                   ),
-                if (gnss.speedMps != null && settings.showSpeed)
+                // While navigating the speed capsule shows speed already.
+                if (gnss.speedMps != null &&
+                    settings.showSpeed &&
+                    session.phase != NavPhase.navigating)
                   formatSpeed(gnss.speedMps!, metric: settings.metricUnits),
               ].join(' · '),
               style: Theme.of(context).textTheme.labelSmall,
@@ -830,11 +1009,15 @@ class _MapScreenState extends ConsumerState<MapScreen>
     final fabs = Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (_mapRotation.abs() > 2)
+        if (showCompass(
+          mapRotationDegrees: _mapRotation,
+          courseUpFollowing: session.followUser &&
+              session.followMode == FollowMode.courseUp,
+        ))
           Padding(
             padding: const EdgeInsets.only(bottom: 10),
             child: CompassRose(
-              rotationDegrees: _mapRotation,
+              mapRotationDegrees: _mapRotation,
               onNorthUp: _northUp,
             ),
           ),
@@ -913,6 +1096,15 @@ class _MapScreenState extends ConsumerState<MapScreen>
               ),
             VoiceStatusBanner(
               reason: ref.watch(voiceServiceProvider).unavailableReason,
+            ),
+            ValueListenableBuilder<bool>(
+              valueListenable: tiles.tilesFailing,
+              builder: (context, failing, _) => failing
+                  ? const Padding(
+                      padding: EdgeInsets.only(top: 8),
+                      child: _TilesOfflineBanner(),
+                    )
+                  : const SizedBox.shrink(),
             ),
             const SizedBox(height: 8),
             Row(
@@ -1033,6 +1225,14 @@ class _MapScreenState extends ConsumerState<MapScreen>
               children: [
                 map,
                 Positioned(right: 12, bottom: 24, child: SafeArea(child: fabs)),
+                if (!session.followUser)
+                  Positioned(
+                    left: 12,
+                    bottom: 24,
+                    child: SafeArea(
+                      child: _RecenterPill(onPressed: _resumeFollow),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -1048,6 +1248,14 @@ class _MapScreenState extends ConsumerState<MapScreen>
             bottom: previewBottom,
             child: SafeArea(child: fabs),
           ),
+          if (!session.followUser &&
+              (session.phase == NavPhase.navigating ||
+                  session.phase == NavPhase.arrived))
+            Positioned(
+              left: 12,
+              bottom: 24,
+              child: SafeArea(child: _RecenterPill(onPressed: _resumeFollow)),
+            ),
           if (session.phase == NavPhase.preview)
             Positioned(
               left: 0,
@@ -1177,6 +1385,57 @@ class _PermissionBanner extends StatelessWidget {
               child: Text(
                 'Enable',
                 style: TextStyle(color: theme.colorScheme.onErrorContainer),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _RecenterPill extends StatelessWidget {
+  const _RecenterPill({required this.onPressed});
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return FilledButton.icon(
+      style: FilledButton.styleFrom(
+        minimumSize: const Size(0, AppConstants.minTouchDp),
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        shape: const StadiumBorder(),
+        elevation: 4,
+      ),
+      onPressed: onPressed,
+      icon: const Icon(Icons.navigation),
+      label: const Text('Re-center'),
+    );
+  }
+}
+
+class _TilesOfflineBanner extends StatelessWidget {
+  const _TilesOfflineBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Material(
+      borderRadius: BorderRadius.circular(12),
+      color: theme.colorScheme.errorContainer,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Row(
+          children: [
+            Icon(Icons.cloud_off, color: theme.colorScheme.onErrorContainer),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Can\'t load the map — no internet connection? '
+                'Places you have already viewed still show.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onErrorContainer,
+                ),
               ),
             ),
           ],

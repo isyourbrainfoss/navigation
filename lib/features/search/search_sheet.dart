@@ -92,7 +92,7 @@ class _SearchSheetState extends ConsumerState<SearchSheet> {
           decoration: InputDecoration(
             hintText: widget.alongRoute
                 ? 'Search along route'
-                : 'Search places or 52.52, 13.40',
+                : 'Search places or 59.91, 10.75',
             border: InputBorder.none,
             suffixIcon: search.query.isEmpty
                 ? null

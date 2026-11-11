@@ -196,9 +196,33 @@ abstract final class GeoMath {
     return (traveled: traveled, remaining: remaining);
   }
 
-  static double lerpAngleDegrees(double a, double b, double t) {
-    var d = ((b - a + 540) % 360) - 180;
-    return (a + d * t + 360) % 360;
+  /// Wrap [degrees] into (-180, 180]. Map rotations are kept in this range
+  /// so "north up" is exactly 0 and never 359.9.
+  static double normalizeSignedDegrees(double degrees) {
+    final d = degrees % 360; // Dart's % is non-negative for a positive divisor.
+    return d > 180 ? d - 360 : d;
+  }
+
+  /// Signed shortest angular difference `b - a`, in (-180, 180].
+  static double angleDeltaDegrees(double a, double b) =>
+      normalizeSignedDegrees(b - a);
+
+  /// Step from [a] towards [b] along the shortest arc by fraction [t].
+  ///
+  /// The result is signed (-180, 180] and snaps to [b] once within
+  /// [snapDegrees], so repeated easing actually reaches the target. The old
+  /// version returned [0, 360) and only approached it asymptotically, which
+  /// left the map at 359.99° after leaving course-up (compass stuck on screen)
+  /// and made the compass spin a full turn whenever the angle wrapped.
+  static double lerpAngleDegrees(
+    double a,
+    double b,
+    double t, {
+    double snapDegrees = 0.05,
+  }) {
+    final d = angleDeltaDegrees(a, b);
+    if (d.abs() <= snapDegrees) return normalizeSignedDegrees(b);
+    return normalizeSignedDegrees(a + d * t);
   }
 
   /// Destination point [meters] from [start] at [bearingDeg] (0 = north).

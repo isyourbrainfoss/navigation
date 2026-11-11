@@ -2,20 +2,31 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-/// Google-style puck: heading cone, pulsing accuracy, white-cased chevron.
+/// Google-style location puck: pulsing dot, plus a heading chevron and view
+/// cone when the direction of travel is known.
+///
+/// [headingDegrees] is a true bearing (0 = north, clockwise). The puck is a
+/// flutter_map [Marker] without `rotate: true`, so it lives in the map's own
+/// rotated frame: drawing it at the true bearing points it the right way on
+/// screen in both north-up and course-up. (Course-up used to pass 0 here,
+/// which pointed the chevron at north instead of the direction of travel.)
+/// With no heading (standing still, no compass) a plain dot is drawn rather
+/// than a chevron pointing at an arbitrary direction.
 class UserPuck extends StatefulWidget {
   const UserPuck({
     super.key,
     this.headingDegrees,
     this.accuracyMeters,
-    this.courseUp = false,
     this.navigating = false,
+    this.stale = false,
   });
 
   final double? headingDegrees;
   final double? accuracyMeters;
-  final bool courseUp;
   final bool navigating;
+
+  /// The last fix is old: draw the puck grey so it is not mistaken for live.
+  final bool stale;
 
   @override
   State<UserPuck> createState() => _UserPuckState();
@@ -43,45 +54,70 @@ class _UserPuckState extends State<UserPuck>
   @override
   Widget build(BuildContext context) {
     final heading = widget.headingDegrees;
-    final color = Theme.of(context).colorScheme.primary;
+    final color = widget.stale
+        ? const Color(0xFF94A3B8)
+        : Theme.of(context).colorScheme.primary;
+    final angle = heading == null ? 0.0 : heading * math.pi / 180.0;
     return AnimatedBuilder(
       animation: _pulse,
       builder: (context, _) {
-        final t = _pulse.value;
+        final t = widget.stale ? 0.0 : _pulse.value;
         return SizedBox(
           width: 72,
           height: 72,
           child: Stack(
             alignment: Alignment.center,
             children: [
-              if (widget.navigating)
-                CustomPaint(
-                  size: const Size(72, 72),
-                  painter: _ConePainter(
-                    color: color.withValues(alpha: 0.22),
-                  ),
-                ),
-              Opacity(
-                opacity: (1 - t) * 0.45,
-                child: Transform.scale(
-                  scale: 0.7 + t * 0.9,
-                  child: Container(
-                    width: 28,
-                    height: 28,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: color.withValues(alpha: 0.35),
+              if (heading != null)
+                Transform.rotate(
+                  angle: angle,
+                  child: CustomPaint(
+                    size: const Size(72, 72),
+                    painter: _ConePainter(
+                      color: color.withValues(
+                        alpha: widget.navigating ? 0.24 : 0.16,
+                      ),
                     ),
                   ),
                 ),
-              ),
-              Transform.rotate(
-                angle: heading == null ? 0 : heading * math.pi / 180.0,
-                child: CustomPaint(
-                  size: const Size(40, 40),
-                  painter: _ChevronPainter(color: color),
+              if (!widget.stale)
+                Opacity(
+                  opacity: (1 - t) * 0.45,
+                  child: Transform.scale(
+                    scale: 0.7 + t * 0.9,
+                    child: Container(
+                      width: 28,
+                      height: 28,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: color.withValues(alpha: 0.35),
+                      ),
+                    ),
+                  ),
                 ),
-              ),
+              if (heading != null)
+                Transform.rotate(
+                  key: const ValueKey('puck-chevron'),
+                  angle: angle,
+                  child: CustomPaint(
+                    size: const Size(40, 40),
+                    painter: _ChevronPainter(color: color),
+                  ),
+                )
+              else
+                Container(
+                  key: const ValueKey('puck-dot'),
+                  width: 20,
+                  height: 20,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: color,
+                    border: Border.all(color: Colors.white, width: 3),
+                    boxShadow: const [
+                      BoxShadow(color: Color(0x66000000), blurRadius: 4),
+                    ],
+                  ),
+                ),
             ],
           ),
         );

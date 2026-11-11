@@ -16,8 +16,8 @@ class GuidanceBanner extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final session = ref.watch(mapSessionProvider);
     final settings = ref.watch(settingsProvider);
-    final fix = ref.watch(locationFixProvider).valueOrNull ??
-        ref.watch(locationServiceProvider).lastFix;
+    // Rebuild on each fix so the ETA clock stays current.
+    ref.watch(locationFixProvider);
     if (session.phase != NavPhase.navigating &&
         session.phase != NavPhase.arrived) {
       return const SizedBox.shrink();
@@ -51,7 +51,6 @@ class GuidanceBanner extends ConsumerWidget {
     final approaching = progress?.approaching == true ||
         remainingM <= AppConstants.approachingMeters;
     final eta = DateTime.now().add(Duration(seconds: remainingS.round()));
-    final speed = fix?.speedMps ?? 0;
     final arrived = session.phase == NavPhase.arrived;
     final onPrimary = arrived
         ? theme.colorScheme.onSecondaryContainer
@@ -187,23 +186,30 @@ class GuidanceBanner extends ConsumerWidget {
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           child: Row(
             children: [
-              _stat(
-                theme,
-                Icons.schedule,
-                '${formatDurationSeconds(remainingS)} · ${formatEtaClock(eta)}',
-              ),
-              _stat(
-                theme,
-                Icons.straighten,
-                formatDistanceMeters(remainingM, metric: settings.metricUnits),
-              ),
-              if (settings.showSpeed)
-                _stat(
-                  theme,
-                  Icons.speed,
-                  formatSpeed(speed, metric: settings.metricUnits),
+              // Wraps instead of overflowing on narrow phones. Current speed
+              // lives in the speed capsule on the map, not here as well.
+              Expanded(
+                child: Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  runSpacing: 2,
+                  children: [
+                    _stat(
+                      theme,
+                      Icons.schedule,
+                      '${formatDurationSeconds(remainingS)} · '
+                      '${formatEtaClock(eta)}',
+                    ),
+                    _stat(
+                      theme,
+                      Icons.straighten,
+                      formatDistanceMeters(
+                        remainingM,
+                        metric: settings.metricUnits,
+                      ),
+                    ),
+                  ],
                 ),
-              const Spacer(),
+              ),
               IconButton(
                 tooltip: session.muted ? 'Unmute' : 'Mute',
                 style: IconButton.styleFrom(

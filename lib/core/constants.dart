@@ -45,7 +45,20 @@ abstract final class AppConstants {
   /// Public Valhalla (truck + optional custom).
   static const valhallaDefault = 'https://valhalla1.openstreetmap.de';
 
-  static const defaultZoom = 14.0;
+  /// Street level: where the map lands on "my location".
+  static const defaultZoom = 16.0;
+
+  /// City overview used before the first fix on a fresh install.
+  static const overviewZoom = 11.0;
+
+  /// "My location" keeps the current zoom when at least this close.
+  static const recenterMinZoom = 14.0;
+
+  /// A fix older than this is drawn as "last known" (grey puck).
+  static const staleFixAfter = Duration(seconds: 30);
+
+  /// After this long without any fix, say so instead of "Waiting for GPS…".
+  static const gpsWaitWarnAfter = Duration(seconds: 25);
   static const navZoom = 17.0;
   static const walkZoom = 18.0;
   static const highwayZoom = 15.0;

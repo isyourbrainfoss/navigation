@@ -77,6 +77,10 @@ flutter run            # Android device/emulator
 flutter run -d linux   # desktop / Linux phone
 ```
 
+Without GeoClue (a desktop or CI box), debug and profile builds can fake a
+GPS fix: `NAV_SIMULATE_LOCATION="59.93,10.95,270,8" flutter run -d linux`
+(`lat,lon[,heading°,speed m/s]`). Release builds ignore it.
+
 ### Project layout
 
 ```

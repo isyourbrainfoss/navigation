@@ -59,3 +59,13 @@ String formatAccuracy(double meters) {
   if (meters < 1) return '<1 m';
   return '±${meters.round()} m';
 }
+
+/// "just now", "45 s ago", "3 min ago", "2 h ago".
+String formatAge(Duration? age) {
+  if (age == null) return 'unknown';
+  final s = age.inSeconds;
+  if (s < 10) return 'just now';
+  if (s < 60) return '$s s ago';
+  if (age.inMinutes < 60) return '${age.inMinutes} min ago';
+  return '${age.inHours} h ago';
+}

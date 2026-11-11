@@ -73,7 +73,12 @@ class LocationService {
 
   /// Test helper: a GPS fix must not refresh [_lastActivityAt].
   @visibleForTesting
-  void ingestFix(LocationFix fix) {
+  void ingestFix(LocationFix fix) => publishFix(fix);
+
+  /// Publish a fix that did not come from the platform stream (tests and the
+  /// debug-only location simulator). Like a GPS tick, it is not user activity.
+  @protected
+  void publishFix(LocationFix fix) {
     lastFix = fix;
     lastFixAt = _clock();
     lastError = null;

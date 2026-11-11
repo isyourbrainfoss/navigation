@@ -1,3 +1,7 @@
+import 'dart:async';
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -10,6 +14,7 @@ import 'services/location_service.dart';
 import 'services/routing_service.dart';
 import 'services/search_service.dart';
 import 'services/settings_repository.dart';
+import 'services/simulated_location_service.dart';
 import 'services/tile_cache_service.dart';
 import 'services/track_repository.dart';
 import 'services/voice_service.dart';
@@ -28,13 +33,23 @@ Future<void> main(List<String> args) async {
   final settingsRepo = await SettingsRepository.create();
   final favoritesRepo = await FavoritesRepository.create();
   final tracksRepo = await TrackRepository.create();
-  final location = LocationService();
+  final LocationService location = (kReleaseMode
+          ? null
+          : SimulatedLocationService.fromEnvironment(
+              Platform.environment['NAV_SIMULATE_LOCATION'],
+            )) ??
+      LocationService();
   final search = SearchService();
   final routing = RoutingService();
   final tiles = TileCacheService();
   final voice = VoiceService();
   final keepAwake = KeepAwakeService();
   await tiles.init();
+  tiles.maxCacheBytes = settingsRepo.load().tileCacheLimitMb * 1024 * 1024;
+  // Enforce the cache limit in the background, well after the first frame.
+  unawaited(
+    Future<void>.delayed(const Duration(seconds: 20), tiles.trimToCap),
+  );
 
   // Kick off permission + first fix without blocking first frame.
   // ignore: unawaited_futures
