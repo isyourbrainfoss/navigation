@@ -141,6 +141,9 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
 
   Future<void> setCustomRoutingUrl(String value) =>
       update(state.copyWith(customRoutingUrl: value));
+
+  Future<void> setCartoApiKey(String value) =>
+      update(state.copyWith(cartoApiKey: value.trim()));
 }
 
 final settingsProvider =
