@@ -27,6 +27,10 @@ class TileCacheService {
   bool _cancelRequested = false;
   bool _downloading = false;
 
+  /// Without a timeout a stalled connection kept a tile (or an offline
+  /// download worker, which cancel cannot interrupt) waiting indefinitely.
+  static const tileRequestTimeout = Duration(seconds: 20);
+
   Stream<DownloadProgress> get progress => _progressController.stream;
   bool get isDownloading => _downloading;
 
@@ -97,9 +101,29 @@ class TileCacheService {
 
   Future<void> _saveRegionsMeta() async {
     final file = File(p.join(root.path, 'regions.json'));
-    await file.writeAsString(
-      jsonEncode(regions.map((r) => r.toJson()).toList()),
+    await _writeAtomically(
+      file,
+      utf8.encode(jsonEncode(regions.map((r) => r.toJson()).toList())),
     );
+  }
+
+  /// Write via a unique temp file + rename so a crash or kill mid-write
+  /// (common during a long offline download) never leaves a truncated file
+  /// in place. A truncated tile used to be served from the cache forever and
+  /// fail to decode; truncated regions.json dropped every saved region.
+  static Future<void> _writeAtomically(File file, List<int> bytes) async {
+    final tmp = File(
+      '${file.path}.${DateTime.now().microsecondsSinceEpoch}.tmp',
+    );
+    try {
+      await tmp.writeAsBytes(bytes, flush: true);
+      await tmp.rename(file.path);
+    } catch (_) {
+      try {
+        if (await tmp.exists()) await tmp.delete();
+      } catch (_) {}
+      rethrow;
+    }
   }
 
   File tileFile(String styleKey, int z, int x, int y) {
@@ -134,7 +158,7 @@ class TileCacheService {
     if (isCartoPlaceholderTile(bytes)) return;
     final file = tileFile(styleKey, z, x, y);
     await file.parent.create(recursive: true);
-    await file.writeAsBytes(bytes, flush: true);
+    await _writeAtomically(file, bytes);
   }
 
   int estimateTiles({
@@ -203,13 +227,16 @@ class TileCacheService {
     var done = 0;
     var bytes = 0;
     Object? failure;
-    final queue = List<({int x, int y, int z})>.from(tiles);
+    // Shared cursor instead of queue.removeAt(0): removing from the front of
+    // a List is O(n), which made a 50 km region (tens of thousands of tiles)
+    // quadratic on the UI isolate.
+    var next = 0;
 
     Future<void> worker() async {
       while (true) {
         if (_cancelRequested) return;
-        if (queue.isEmpty) return;
-        final tile = queue.removeAt(0);
+        if (next >= tiles.length) return;
+        final tile = tiles[next++];
         try {
           final file = tileFile(styleKey, tile.z, tile.x, tile.y);
           if (!await file.exists()) {
@@ -217,10 +244,12 @@ class TileCacheService {
                 .replaceAll('{z}', '${tile.z}')
                 .replaceAll('{x}', '${tile.x}')
                 .replaceAll('{y}', '${tile.y}');
-            final resp = await _client.get(
-              Uri.parse(url),
-              headers: {'User-Agent': AppConstants.userAgent},
-            );
+            final resp = await _client
+                .get(
+                  Uri.parse(url),
+                  headers: {'User-Agent': AppConstants.userAgent},
+                )
+                .timeout(tileRequestTimeout);
             if (isTilePlaceholderResponse(resp)) {
               throw StateError(
                 'CARTO returned "API KEY REQUIRED" — check the API key',
@@ -440,9 +469,18 @@ class _OfflineAwareImage extends ImageProvider<_OfflineAwareImage> {
 
     final offline = await service.findTile(styleKey, z, x, y);
     if (offline != null) {
-      final bytes = await offline.readAsBytes();
-      final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
-      return await decode(buffer);
+      try {
+        final bytes = await offline.readAsBytes();
+        final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
+        return await decode(buffer);
+      } catch (e) {
+        // Corrupt cache entry (e.g. truncated by an older build): drop it and
+        // fall through to the network instead of failing this tile forever.
+        debugPrint('cached tile unreadable, refetching: $e');
+        try {
+          await offline.delete();
+        } catch (_) {}
+      }
     }
 
     final url = urlTemplate
@@ -450,10 +488,12 @@ class _OfflineAwareImage extends ImageProvider<_OfflineAwareImage> {
         .replaceAll('{x}', '$x')
         .replaceAll('{y}', '$y');
     try {
-      final resp = await client.get(
-        Uri.parse(url),
-        headers: {'User-Agent': AppConstants.userAgent},
-      );
+      final resp = await client
+          .get(
+            Uri.parse(url),
+            headers: {'User-Agent': AppConstants.userAgent},
+          )
+          .timeout(TileCacheService.tileRequestTimeout);
       if (resp.statusCode == 200 &&
           resp.bodyBytes.isNotEmpty &&
           !isTilePlaceholderResponse(resp)) {

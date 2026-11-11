@@ -234,4 +234,22 @@ void main() {
     );
     expect(redactTileKey('no key here'), 'no key here');
   });
+
+  group('cache writes', () {
+    test('writeTile and regions.json leave no temp files behind', () async {
+      final svc = TileCacheService(
+        client: MockClient((_) async => http.Response('', 404)),
+      );
+      await svc.init(rootOverride: tmp);
+      await svc.writeTile('osm', 3, 1, 2, [1, 2, 3]);
+      expect(await svc.tileFile('osm', 3, 1, 2).readAsBytes(), [1, 2, 3]);
+      await svc.writeTile('osm', 3, 1, 2, [4, 5]);
+      expect(await svc.tileFile('osm', 3, 1, 2).readAsBytes(), [4, 5]);
+      final leftovers = tmp
+          .listSync(recursive: true)
+          .whereType<File>()
+          .where((f) => f.path.endsWith('.tmp'));
+      expect(leftovers, isEmpty);
+    });
+  });
 }
