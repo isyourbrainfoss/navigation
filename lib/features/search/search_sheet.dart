@@ -123,8 +123,16 @@ class _SearchSheetState extends ConsumerState<SearchSheet> {
         children: [
             if (widget.bias != null)
               SizedBox(
-                height: 44,
-                child: ListView(
+                height: 48,
+                // Fade the right edge so a cut-off chip reads as "scroll
+                // for more" rather than a layout bug.
+                child: ShaderMask(
+                  blendMode: BlendMode.dstIn,
+                  shaderCallback: (rect) => const LinearGradient(
+                    colors: [Colors.black, Colors.black, Colors.transparent],
+                    stops: [0, 0.88, 1],
+                  ).createShader(rect),
+                  child: ListView(
                   scrollDirection: Axis.horizontal,
                   padding: const EdgeInsets.symmetric(horizontal: 12),
                   children: [
@@ -138,7 +146,10 @@ class _SearchSheetState extends ConsumerState<SearchSheet> {
                               .searchCategory(c, bias: widget.bias!),
                         ),
                       ),
+                    // Room to scroll the last chip out of the fade.
+                    const SizedBox(width: 32),
                   ],
+                ),
                 ),
               ),
             if (search.loading) const LinearProgressIndicator(minHeight: 2),
