@@ -308,7 +308,9 @@ class _MapScreenState extends ConsumerState<MapScreen>
             modeName: session.mode.name,
             speedMps: fix.speedMps ?? 0,
           );
-      ref.read(mapSessionProvider.notifier).maybeReroute(progress);
+      ref
+          .read(mapSessionProvider.notifier)
+          .maybeReroute(progress, speedMps: fix.speedMps);
 
       if (session.followUser) {
         final heading = (fix.heading != null && (fix.speedMps ?? 0) > 0.6)
@@ -1064,6 +1066,7 @@ class _MapScreenState extends ConsumerState<MapScreen>
                 session.phase == NavPhase.arrived)
               const GuidanceBanner(),
             if (session.progress?.offRoute == true &&
+                session.offRouteConfirmed &&
                 session.phase == NavPhase.navigating &&
                 !session.holdRoute)
               Padding(
@@ -1079,15 +1082,33 @@ class _MapScreenState extends ConsumerState<MapScreen>
                           child: Text(
                             session.rerouting
                                 ? 'Recalculating…'
-                                : 'Off route — hold your heading or wait for a new path',
-                            style: Theme.of(context).textTheme.labelLarge,
+                                : 'Off route — finding a new path',
+                            style: Theme.of(context).textTheme.labelLarge
+                                ?.copyWith(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onTertiaryContainer,
+                                ),
                           ),
                         ),
-                        TextButton(
+                        const SizedBox(width: 8),
+                        // Filled, so it reads on the tinted banner (a text
+                        // button in the same hue was hard to see).
+                        FilledButton(
+                          key: const Key('off_route_stay'),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: Theme.of(
+                              context,
+                            ).colorScheme.onTertiaryContainer,
+                            foregroundColor: Theme.of(
+                              context,
+                            ).colorScheme.tertiaryContainer,
+                            minimumSize: const Size(64, 44),
+                          ),
                           onPressed: () => ref
                               .read(mapSessionProvider.notifier)
                               .stayOnThisRoute(),
-                          child: const Text('Stay'),
+                          child: const Text('Keep route'),
                         ),
                       ],
                     ),

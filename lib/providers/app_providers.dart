@@ -193,6 +193,10 @@ enum NavPhase { browsing, preview, navigating, arrived }
 
 enum FollowMode { northUp, courseUp }
 
+/// Whether an off-route fix counts toward the warning / reroute. A fix with
+/// a known speed under ~2 km/h is treated as standing still.
+bool offRouteFixCounts(double? speedMps) => speedMps == null || speedMps >= 0.6;
+
 class MapSession {
   const MapSession({
     this.phase = NavPhase.browsing,
@@ -214,6 +218,7 @@ class MapSession {
     this.overlayTrack,
     this.alongRouteQuery = '',
     this.holdRoute = false,
+    this.offRouteConfirmed = false,
   });
 
   final NavPhase phase;
@@ -235,6 +240,11 @@ class MapSession {
   final SavedTrack? overlayTrack;
   final String alongRouteQuery;
   final bool holdRoute;
+
+  /// Off route for [AppConstants.offRouteConsecutiveFixes] moving fixes in a
+  /// row. The banner waits for this so a parked car, a GPS jump or the first
+  /// fix after starting does not shout "Off route".
+  final bool offRouteConfirmed;
 
   MapSession copyWith({
     NavPhase? phase,
@@ -262,6 +272,7 @@ class MapSession {
     bool clearOverlay = false,
     String? alongRouteQuery,
     bool? holdRoute,
+    bool? offRouteConfirmed,
   }) {
     return MapSession(
       phase: phase ?? this.phase,
@@ -285,6 +296,7 @@ class MapSession {
           clearOverlay ? null : (overlayTrack ?? this.overlayTrack),
       alongRouteQuery: alongRouteQuery ?? this.alongRouteQuery,
       holdRoute: holdRoute ?? this.holdRoute,
+      offRouteConfirmed: offRouteConfirmed ?? this.offRouteConfirmed,
     );
   }
 }
@@ -459,6 +471,7 @@ class MapSessionNotifier extends StateNotifier<MapSession> {
               ? FollowMode.courseUp
               : FollowMode.northUp),
       instructionIndex: 0,
+      offRouteConfirmed: false,
     );
     _offRouteStreak = 0;
     ref.read(voiceServiceProvider).reset();
@@ -525,15 +538,24 @@ class MapSessionNotifier extends StateNotifier<MapSession> {
     }
   }
 
-  Future<void> maybeReroute(NavProgress progress) async {
+  Future<void> maybeReroute(NavProgress progress, {double? speedMps}) async {
     if (state.phase != NavPhase.navigating) return;
     if (state.holdRoute) return;
     if (!progress.offRoute) {
       _offRouteStreak = 0;
+      if (state.offRouteConfirmed) {
+        state = state.copyWith(offRouteConfirmed: false);
+      }
       return;
     }
+    // Standing still (waiting to set off, at a light, simulator at rest):
+    // nothing to correct yet, so neither warn nor reroute.
+    if (!offRouteFixCounts(speedMps)) return;
     _offRouteStreak++;
     if (_offRouteStreak < AppConstants.offRouteConsecutiveFixes) return;
+    if (!state.offRouteConfirmed) {
+      state = state.copyWith(offRouteConfirmed: true);
+    }
     if (_rerouteInFlight) return;
     final last = _lastReroute;
     if (last != null &&

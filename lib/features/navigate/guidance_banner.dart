@@ -151,7 +151,7 @@ class GuidanceBanner extends ConsumerWidget {
                               Padding(
                                 padding: const EdgeInsets.only(top: 4),
                                 child: Text(
-                                  'Then ${thenNext.text}',
+                                  thenLine(thenNext.text),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: theme.textTheme.bodyMedium?.copyWith(
@@ -303,4 +303,23 @@ class GuidanceBanner extends ConsumerWidget {
       ),
     );
   }
+}
+
+/// "Then turn left onto Storgata": lowercases the instruction's first letter
+/// and drops a leading "At the end of the road, " style clause so the useful
+/// part fits on one line.
+String thenLine(String instruction) {
+  var t = instruction.trim();
+  final comma = t.indexOf(', ');
+  if (comma > 0 && comma < 40 && RegExp(r'^(At|In|After|On) ').hasMatch(t)) {
+    t = t.substring(comma + 2);
+  }
+  if (t.isEmpty) return 'Then continue';
+  final first = t[0];
+  final second = t.length > 1 ? t[1] : '';
+  // Keep acronyms/names like "E6" or "Ring 3" as they are.
+  final lower = RegExp(r'[a-zæøåäöü]').hasMatch(second)
+      ? first.toLowerCase()
+      : first;
+  return 'Then $lower${t.substring(1)}';
 }

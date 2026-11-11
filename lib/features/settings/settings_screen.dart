@@ -18,6 +18,7 @@ class SettingsScreen extends ConsumerWidget {
     final home = favs.where((p) => p.role == PlaceRole.home);
     final work = favs.where((p) => p.role == PlaceRole.work);
     final n = ref.watch(settingsProvider.notifier);
+    final nightActive = ref.watch(nightDrivingActiveProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
@@ -34,6 +35,11 @@ class SettingsScreen extends ConsumerWidget {
               ThemePreference.dark => 'Dark',
             },
             onChanged: n.setTheme,
+            // Night driving wins over the theme; say so instead of leaving
+            // "Light" looking broken after sunset.
+            subtitle: nightActive && settings.theme != ThemePreference.dark
+                ? 'Dark right now: night driving is on'
+                : null,
           ),
           _enumTile<MapStylePreference>(
             title: 'Map style',
@@ -58,6 +64,13 @@ class SettingsScreen extends ConsumerWidget {
               NightDriving.on => 'Always',
             },
             onChanged: n.setNightDriving,
+            subtitle: switch (settings.nightDriving) {
+              NightDriving.auto => nightActive
+                  ? 'On now (after sunset): dark map and theme'
+                  : 'Dark map and theme after sunset',
+              NightDriving.on => 'Dark map and theme all the time',
+              NightDriving.off => null,
+            },
           ),
           SwitchListTile(
             title: const Text('High contrast'),
@@ -123,7 +136,9 @@ class SettingsScreen extends ConsumerWidget {
           const _SectionTitle('Places'),
           ListTile(
             title: const Text('Home'),
-            subtitle: Text(home.isEmpty ? 'Not set' : home.first.name),
+            subtitle: Text(
+              home.isEmpty ? 'Not set: tap to choose' : home.first.name,
+            ),
             trailing: const Icon(Icons.chevron_right),
             onTap: () async {
               final place = await showSearchSheet(context);
@@ -139,7 +154,9 @@ class SettingsScreen extends ConsumerWidget {
           ),
           ListTile(
             title: const Text('Work'),
-            subtitle: Text(work.isEmpty ? 'Not set' : work.first.name),
+            subtitle: Text(
+              work.isEmpty ? 'Not set: tap to choose' : work.first.name,
+            ),
             trailing: const Icon(Icons.chevron_right),
             onTap: () async {
               final place = await showSearchSheet(context);
@@ -212,6 +229,7 @@ class SettingsScreen extends ConsumerWidget {
                       'Dark Matter and offline downloads'
                   : 'Set — using CARTO Voyager / Dark Matter',
             ),
+            trailing: const Icon(Icons.chevron_right),
             onTap: () async {
               final controller =
                   TextEditingController(text: settings.cartoApiKey);
@@ -251,6 +269,7 @@ class SettingsScreen extends ConsumerWidget {
                   ? 'FOSSGIS OSRM + public Valhalla for truck'
                   : settings.customRoutingUrl,
             ),
+            trailing: const Icon(Icons.chevron_right),
             onTap: () async {
               final controller =
                   TextEditingController(text: settings.customRoutingUrl);
@@ -321,11 +340,13 @@ class SettingsScreen extends ConsumerWidget {
     required List<T> values,
     required String Function(T) label,
     required Future<void> Function(T) onChanged,
+    String? subtitle,
   }) {
     // The dropdown already shows the current value; repeating it as a
     // subtitle only made every row taller.
     return ListTile(
       title: Text(title),
+      subtitle: subtitle == null ? null : Text(subtitle),
       trailing: DropdownButton<T>(
         value: value,
         onChanged: (v) {
