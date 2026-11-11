@@ -346,7 +346,9 @@ class SearchService {
             street,
           ].whereType<String>().where((s) => s.isNotEmpty).join(' ')
         : null;
+    final kind = placeKindLabel(osmKey, osmValue);
     final subtitleParts = <String>[
+      ?kind,
       ?addressLine,
       ?city,
       if (state != null && state != city) state,
@@ -397,12 +399,78 @@ class SearchService {
       if (c != 0) return c;
       return a.index.compareTo(b.index);
     });
-    return scored.map((e) => e.place).toList();
+    return dedupeNearbySameName(scored.map((e) => e.place).toList());
   }
 
   void dispose() {
     _client.close();
   }
+}
+
+/// Photon often returns the same place several times (station node, station
+/// area, platform, bus terminal all called "Oslo S"). Keep the first (best
+/// ranked) of each name within [radiusMeters].
+List<Place> dedupeNearbySameName(
+  List<Place> places, {
+  double radiusMeters = 300,
+}) {
+  final kept = <Place>[];
+  for (final p in places) {
+    final name = p.name.trim().toLowerCase();
+    final dup = kept.any(
+      (k) =>
+          k.name.trim().toLowerCase() == name &&
+          GeoMath.haversineMeters(k.latLng, p.latLng) < radiusMeters,
+    );
+    if (!dup) kept.add(p);
+  }
+  return kept;
+}
+
+/// Short human label for an OSM key/value, e.g. railway=station →
+/// "Train station", amenity=fuel → "Fuel". Null for plain addresses.
+String? placeKindLabel(String? key, String? value) {
+  if (key == null || value == null || value.isEmpty || value == 'yes') {
+    return null;
+  }
+  const special = <String, String>{
+    'railway=station': 'Train station',
+    'railway=halt': 'Train stop',
+    'railway=tram_stop': 'Tram stop',
+    'railway=subway_entrance': 'Metro entrance',
+    'public_transport=station': 'Station',
+    'public_transport=platform': 'Platform',
+    'public_transport=stop_position': 'Stop',
+    'amenity=bus_station': 'Bus station',
+    'highway=bus_stop': 'Bus stop',
+    'aeroway=aerodrome': 'Airport',
+    'amenity=fuel': 'Fuel',
+    'amenity=charging_station': 'EV charging',
+    'amenity=parking': 'Parking',
+    'shop=supermarket': 'Supermarket',
+  };
+  final hit = special['$key=$value'];
+  if (hit != null) return hit;
+  const kinds = {
+    'amenity',
+    'shop',
+    'tourism',
+    'leisure',
+    'railway',
+    'public_transport',
+    'aeroway',
+    'historic',
+    'office',
+    'healthcare',
+  };
+  if (key == 'place') {
+    const places = {'city', 'town', 'village', 'suburb', 'neighbourhood'};
+    if (!places.contains(value)) return null;
+  } else if (!kinds.contains(key)) {
+    return null;
+  }
+  final words = value.replaceAll('_', ' ');
+  return words[0].toUpperCase() + words.substring(1);
 }
 
 class SearchException implements Exception {
