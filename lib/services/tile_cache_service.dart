@@ -60,7 +60,7 @@ class TileCacheService {
 
   /// Soft cap for tiles cached while browsing, in bytes; 0 = no limit.
   /// Tiles inside saved offline regions never count against eviction: only
-  /// the least recently used browsed tiles are removed, and only once the
+  /// the browsed tiles fetched longest ago (see [isTileStale]) are removed, and only once the
   /// cache is over the cap.
   int maxCacheBytes = defaultMaxCacheBytes;
   static const defaultMaxCacheBytes = 500 * 1024 * 1024;
@@ -136,6 +136,13 @@ class TileCacheService {
     return _trimming ??= _trim(maxBytes ?? maxCacheBytes).whenComplete(() {
       _trimming = null;
     });
+  }
+
+  /// Deletes every browsed tile; tiles inside saved offline regions stay.
+  Future<CacheTrimResult> clearBrowsedTiles() async {
+    // Wait for a running trim so two passes do not race over the same files.
+    await _trimming;
+    return _trim(1);
   }
 
   Future<CacheTrimResult> _trim(int cap) async {
@@ -257,24 +264,64 @@ class TileCacheService {
           return null;
         }
       } catch (_) {}
-      _touch(f);
       return f;
     }
     return null;
   }
 
-  /// Mark a cached tile as recently used (at most once per day per tile) so
-  /// cap eviction removes tiles nobody looks at any more.
-  void _touch(File f) {
-    unawaited(() async {
-      try {
-        final m = await f.lastModified();
-        final now = DateTime.now();
-        if (now.difference(m) > const Duration(days: 1)) {
-          await f.setLastModified(now);
-        }
-      } catch (_) {}
-    }());
+  /// Cached tiles older than this are still shown at once, but refetched in
+  /// the background so roads and labels do not stay outdated forever. The
+  /// OSM tile policy asks clients to keep tiles at least 7 days when the
+  /// server sends no caching headers, so this is also the shortest refresh
+  /// interval allowed.
+  static const tileMaxAge = Duration(days: 7);
+
+  /// A tile file's modification time is when it was fetched. Tiles somebody
+  /// looks at are refreshed at least every [tileMaxAge], which also keeps
+  /// them at the young end for cap eviction: old modification times mean
+  /// tiles nobody has looked at for a while.
+  Future<bool> isTileStale(File f, {DateTime? now}) async {
+    try {
+      final m = await f.lastModified();
+      return (now ?? DateTime.now()).difference(m) > tileMaxAge;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  final Set<String> _refreshing = {};
+
+  /// Refetch one stale tile in the background and replace the cached file.
+  /// Keeps the old tile when offline or on any error, never reports to the
+  /// failure banner (the map already shows the cached tile), and fetches each
+  /// tile at most once at a time.
+  @visibleForTesting
+  Future<bool> refreshTile(
+    String styleKey,
+    int z,
+    int x,
+    int y,
+    String url,
+    http.Client client,
+  ) async {
+    final key = '$styleKey/$z/$x/$y';
+    if (_downloading || !_refreshing.add(key)) return false;
+    try {
+      final resp = await client
+          .get(Uri.parse(url), headers: {'User-Agent': AppConstants.userAgent})
+          .timeout(tileRequestTimeout);
+      if (resp.statusCode == 200 &&
+          resp.bodyBytes.isNotEmpty &&
+          !isTilePlaceholderResponse(resp)) {
+        await writeTile(styleKey, z, x, y, resp.bodyBytes);
+        return true;
+      }
+    } catch (e) {
+      debugPrint('tile refresh failed: ${redactTileKey('$e')}');
+    } finally {
+      _refreshing.remove(key);
+    }
+    return false;
   }
 
   Future<void> writeTile(
@@ -601,12 +648,22 @@ class _OfflineAwareImage extends ImageProvider<_OfflineAwareImage> {
     final x = coordinates.x;
     final y = coordinates.y;
 
+    final url = urlTemplate
+        .replaceAll('{z}', '$z')
+        .replaceAll('{x}', '$x')
+        .replaceAll('{y}', '$y');
+
     final offline = await service.findTile(styleKey, z, x, y);
     if (offline != null) {
       try {
         final bytes = await offline.readAsBytes();
         final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
-        return await decode(buffer);
+        final codec = await decode(buffer);
+        // Show the cached tile now; refresh it for next time if it is old.
+        if (await service.isTileStale(offline)) {
+          unawaited(service.refreshTile(styleKey, z, x, y, url, client));
+        }
+        return codec;
       } catch (e) {
         // Corrupt cache entry (e.g. truncated by an older build): drop it and
         // fall through to the network instead of failing this tile forever.
@@ -617,10 +674,6 @@ class _OfflineAwareImage extends ImageProvider<_OfflineAwareImage> {
       }
     }
 
-    final url = urlTemplate
-        .replaceAll('{z}', '$z')
-        .replaceAll('{x}', '$x')
-        .replaceAll('{y}', '$y');
     try {
       final resp = await client
           .get(
