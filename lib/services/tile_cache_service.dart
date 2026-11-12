@@ -539,6 +539,28 @@ bool isCartoPlaceholderTile(List<int> bytes) =>
 bool isTilePlaceholderResponse(http.Response resp) =>
     isCartoPlaceholderTile(resp.bodyBytes);
 
+/// The z/x/y the tile server (and the offline cache) actually use for
+/// [coordinates] in [options].
+///
+/// With `retinaMode` on a high-DPI screen flutter_map *simulates* retina by
+/// adding 1 to [TileLayer.zoomOffset]; the coordinates it hands to a
+/// provider are then tagged one zoom level below the URL zoom. Building URLs
+/// from `coordinates.z` directly asked for x/y that do not exist at that
+/// zoom (OSM answers 400 "invalid tile") and the map stayed blank.
+@visibleForTesting
+TileCoordinates resolveTileCoordinates(
+  TileCoordinates coordinates,
+  TileLayer options,
+) {
+  final z = (options.zoomOffset +
+          (options.zoomReverse
+              ? options.maxZoom - coordinates.z.toDouble()
+              : coordinates.z.toDouble()))
+      .round();
+  final y = options.tms ? ((1 << z) - 1) - coordinates.y : coordinates.y;
+  return TileCoordinates(coordinates.x, y, z);
+}
+
 class _CachingTileProvider extends TileProvider {
   _CachingTileProvider({
     required this.service,
@@ -558,7 +580,7 @@ class _CachingTileProvider extends TileProvider {
       service: service,
       styleKey: styleKey,
       urlTemplate: urlTemplate,
-      coordinates: coordinates,
+      coordinates: resolveTileCoordinates(coordinates, options),
       client: client,
     );
   }
