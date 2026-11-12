@@ -72,6 +72,64 @@ void main() {
     );
   });
 
+  group('stale tile refresh', () {
+    test('tiles older than 7 days are stale; fresh ones are not', () async {
+      final svc = TileCacheService(
+        client: MockClient((_) async {
+          return http.Response('', 404);
+        }),
+      );
+      await svc.init(rootOverride: tmp);
+      await svc.writeTile('osm', 5, 16, 10, [1, 2, 3]);
+      final f = (await svc.findTile('osm', 5, 16, 10))!;
+      expect(await svc.isTileStale(f), isFalse);
+      f.setLastModifiedSync(DateTime.now().subtract(const Duration(days: 8)));
+      expect(await svc.isTileStale(f), isTrue);
+      // Reading a tile must not reset its age, or it would never refresh.
+      await svc.findTile('osm', 5, 16, 10);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(await svc.isTileStale(f), isTrue);
+    });
+
+    test(
+      'refreshTile replaces the file on success, keeps it on failure',
+      () async {
+        var ok = false;
+        var calls = 0;
+        final client = MockClient((_) async {
+          calls++;
+          return ok
+              ? http.Response.bytes([9, 9, 9], 200)
+              : http.Response('', 503);
+        });
+        final svc = TileCacheService(client: client);
+        await svc.init(rootOverride: tmp);
+        await svc.writeTile('osm', 5, 16, 10, [1, 2, 3]);
+        final f = svc.tileFile('osm', 5, 16, 10)
+          ..setLastModifiedSync(
+            DateTime.now().subtract(const Duration(days: 30)),
+          );
+
+        expect(
+          await svc.refreshTile('osm', 5, 16, 10, 'https://t/5/16/10', client),
+          isFalse,
+        );
+        expect(f.readAsBytesSync(), [1, 2, 3]);
+        expect(await svc.isTileStale(f), isTrue);
+        expect(svc.tilesFailing.value, isFalse);
+
+        ok = true;
+        expect(
+          await svc.refreshTile('osm', 5, 16, 10, 'https://t/5/16/10', client),
+          isTrue,
+        );
+        expect(f.readAsBytesSync(), [9, 9, 9]);
+        expect(await svc.isTileStale(f), isFalse);
+        expect(calls, 2);
+      },
+    );
+  });
+
   test('legacy light/dark cache dirs are purged once', () async {
     for (final k in ['light', 'dark', 'topo']) {
       File(p.join(tmp.path, k, '1', '0', '0.png'))
@@ -326,6 +384,54 @@ void main() {
       expect(svc.tileFile('osm', 5, 1, 1).existsSync(), isFalse);
       expect(svc.tileFile('osm', 5, 2, 1).existsSync(), isTrue);
     });
+
+    test(
+      'clearBrowsedTiles drops all browsed tiles, keeps region tiles',
+      () async {
+        final region = OfflineRegion(
+          id: 'r1',
+          name: 'Lørenskog',
+          centerLat: 59.93,
+          centerLon: 10.95,
+          radiusMeters: 500,
+          minZoom: 14,
+          maxZoom: 14,
+          createdAtMs: 0,
+        );
+        File(
+          p.join(tmp.path, 'regions.json'),
+        ).writeAsStringSync(jsonEncode([region.toJson()]));
+        final svc = TileCacheService();
+        await svc.init(rootOverride: tmp);
+        final inRegion = GeoMath.tilesForCircle(
+          center: region.center,
+          radiusMeters: region.radiusMeters,
+          z: 14,
+        ).first;
+        put(
+          svc,
+          cartoLightStyleKey,
+          inRegion.z,
+          inRegion.x,
+          inRegion.y,
+          4000,
+          DateTime(2020),
+        );
+        put(svc, 'osm', 5, 1, 1, 4000, DateTime(2026));
+        put(svc, 'osm', 5, 2, 1, 4000, DateTime(2026, 2));
+        final r = await svc.clearBrowsedTiles();
+        expect(r.removedTiles, 2);
+        expect(r.freedBytes, 8000);
+        expect(
+          svc
+              .tileFile(cartoLightStyleKey, inRegion.z, inRegion.x, inRegion.y)
+              .existsSync(),
+          isTrue,
+        );
+        expect(svc.tileFile('osm', 5, 1, 1).existsSync(), isFalse);
+        expect(svc.tileFile('osm', 5, 2, 1).existsSync(), isFalse);
+      },
+    );
   });
 
   test('tilesFailing flips after repeated failures and clears on success',

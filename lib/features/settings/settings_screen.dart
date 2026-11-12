@@ -322,9 +322,10 @@ class SettingsScreen extends ConsumerWidget {
     required String Function(T) label,
     required Future<void> Function(T) onChanged,
   }) {
+    // The dropdown already shows the current value; repeating it as a
+    // subtitle only made every row taller.
     return ListTile(
       title: Text(title),
-      subtitle: Text(label(value)),
       trailing: DropdownButton<T>(
         value: value,
         onChanged: (v) {
@@ -362,27 +363,95 @@ class _SectionTitle extends StatelessWidget {
   }
 }
 
-/// Shows how much disk the tile cache uses. Read-only: browsing tiles beyond
-/// the limit are evicted oldest-first; offline regions are never touched.
-class _CacheUsageTile extends ConsumerWidget {
+/// Shows how much disk the tile cache uses and lets the user drop browsed
+/// tiles (e.g. when the map looks outdated). Saved offline areas are kept.
+class _CacheUsageTile extends ConsumerStatefulWidget {
   const _CacheUsageTile();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final tiles = ref.watch(tileCacheServiceProvider);
+  ConsumerState<_CacheUsageTile> createState() => _CacheUsageTileState();
+}
+
+class _CacheUsageTileState extends ConsumerState<_CacheUsageTile> {
+  Future<({int bytes, int tiles})>? _usage;
+  bool _clearing = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _usage ??= ref.read(tileCacheServiceProvider).cacheUsage();
+  }
+
+  Future<void> _clear() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Clear browsed map tiles?'),
+        content: const Text(
+          'Tiles are downloaded again as you look at the map. '
+          'Saved offline areas are kept.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            key: const Key('cache_clear_confirm'),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Clear'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    final tiles = ref.read(tileCacheServiceProvider);
+    setState(() => _clearing = true);
+    final r = await tiles.clearBrowsedTiles();
+    if (!mounted) return;
+    setState(() {
+      _clearing = false;
+      _usage = tiles.cacheUsage();
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Freed ${(r.freedBytes / (1024 * 1024)).toStringAsFixed(1)} MB',
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return FutureBuilder<({int bytes, int tiles})>(
-      future: tiles.cacheUsage(),
+      future: _usage,
       builder: (context, snap) {
         final u = snap.data;
         return ListTile(
-          dense: true,
-          title: const Text('Cached map tiles'),
+          key: const Key('cache_usage_tile'),
+          title: Text(
+            u == null
+                ? 'Cached map tiles'
+                : 'Cached map tiles: '
+                      '${(u.bytes / (1024 * 1024)).toStringAsFixed(1)} MB',
+          ),
           subtitle: Text(
             u == null
                 ? 'Measuring…'
-                : '${(u.bytes / (1024 * 1024)).toStringAsFixed(1)} MB in '
-                    '${u.tiles} tiles. Over the limit, the oldest browsed '
-                    'tiles are removed; saved offline areas are kept.',
+                : '${u.tiles} tiles. Tiles older than 7 days refresh as you '
+                      'view them; over the limit the oldest are removed. '
+                      'Saved offline areas are kept.',
+          ),
+          trailing: TextButton(
+            key: const Key('cache_clear'),
+            onPressed: _clearing || u == null || u.tiles == 0 ? null : _clear,
+            child: _clearing
+                ? const SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('Clear'),
           ),
         );
       },
