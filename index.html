@@ -3,21 +3,57 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Navigation build-17 (Android)</title>
-  <style>
-    body { font-family: system-ui, sans-serif; max-width: 40rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; background: #0d1117; color: #e6edf3; }
-    a { color: #58a6ff; }
-    a.button { display: inline-block; padding: 0.6rem 1.2rem; background: #238636; color: #fff; text-decoration: none; border-radius: 6px; }
-    code { background: #21262d; padding: 0.1rem 0.3rem; border-radius: 3px; }
-  </style>
+  <meta name="robots" content="noindex">
+  <title>Navigation build-17</title>
+  <link rel="stylesheet" href="style.css">
+  <style>:root { --accent: #3d8bfd; --accent-ink: #071018; }</style>
 </head>
 <body>
-  <h1>Navigation build-17</h1>
-  <p>Simple multi-platform navigation — maps, walk/drive routing, offline regions.</p>
-  <p><a class="button" href="https://raw.githubusercontent.com/isyourbrainfoss/navigation/gh-pages/navigation-arm64-v8a.apk">Download APK (arm64-v8a)</a></p>
-  <p>Version <strong>build-17</strong> (build 17). SHA-256: <code>15243a95460d77e16cfce307b65401d027cc4d605f6f4868c5992eb7dd5e60ba</code></p>
-  <p>Install via <a href="https://github.com/ImranR98/Obtainium">Obtainium</a>:</p>
-  <p><code>https://raw.githubusercontent.com/isyourbrainfoss/navigation/gh-pages/version.json</code></p>
-  <p><a href="https://github.com/isyourbrainfoss/navigation">Source on GitHub</a></p>
+  <div class="wrap">
+    <header class="hero">
+      <div>
+        <p class="kicker">Android and Linux · early</p>
+        <h1>Navigation</h1>
+        <p class="lede">A personal, phone-first maps and turn-by-turn app. It is still early, and some of the interface (including the compass) is being reworked.</p>
+        <p class="meta">Pages build-17 · OpenStreetMap, walk / bike / drive, GPX, offline tiles</p>
+        <div class="actions">
+      <a class="button" href="#install">Install</a>
+      <a class="button secondary" href="https://github.com/isyourbrainfoss/navigation">Source on GitHub</a>
+        </div>
+      </div>
+      <p class="disclaimer">Personal, experimental software. Nothing here is a finished product, and nothing was necessarily written or reviewed by a human unless it says so. Use it at your own risk.</p>
+    </header>
+    <nav class="toc">
+      <a href="#screenshots">Screenshots</a>
+      <a href="#install">Install</a>
+      <a href="https://github.com/isyourbrainfoss/navigation">github.com/isyourbrainfoss/navigation</a>
+    </nav>
+    <section id="screenshots">
+      <h2>Screenshots</h2>
+      <ul class="shots">
+        <li><figure class="shot phone"><a href="images/browse-light.jpg"><img src="images/browse-light.jpg" alt="Map of Aker Brygge, Oslo, with the location puck, scale bar, attribution, and the search bar at the bottom." loading="lazy"></a><figcaption>Map</figcaption></figure></li><li><figure class="shot phone"><a href="images/route-light.jpg"><img src="images/route-light.jpg" alt="A driving route from Aker Brygge to St. Hanshaugen fitted on screen, with time, distance, and a Go button." loading="lazy"></a><figcaption>Route preview</figcaption></figure></li><li><figure class="shot phone"><a href="images/navigating-light.jpg"><img src="images/navigating-light.jpg" alt="Turn-by-turn guidance with a large next-turn card, speed, and a course-up map that follows the puck." loading="lazy"></a><figcaption>Navigating (course up)</figcaption></figure></li><li><figure class="shot phone"><a href="images/north-up-light.jpg"><img src="images/north-up-light.jpg" alt="The same guidance after tapping the compass: the map turns north-up and a recenter button appears." loading="lazy"></a><figcaption>Navigating (north up)</figcaption></figure></li><li><figure class="shot phone"><a href="images/browse-dark.jpg"><img src="images/browse-dark.jpg" alt="The map in the dark theme." loading="lazy"></a><figcaption>Map (dark)</figcaption></figure></li><li><figure class="shot phone"><a href="images/route-dark.jpg"><img src="images/route-dark.jpg" alt="Route preview in the dark theme." loading="lazy"></a><figcaption>Route preview (dark)</figcaption></figure></li><li><figure class="shot phone"><a href="images/navigating-dark.jpg"><img src="images/navigating-dark.jpg" alt="Turn-by-turn guidance in the dark theme." loading="lazy"></a><figcaption>Navigating (dark)</figcaption></figure></li><li><figure class="shot phone"><a href="images/settings.jpg"><img src="images/settings.jpg" alt="Settings with the map cache limit and the size of the cached tiles." loading="lazy"></a><figcaption>Settings</figcaption></figure></li>
+      </ul>
+    </section>
+    <section id="install">
+      <h2>Install</h2>
+      
+    <div class="grid-2">
+      <div class="card"><h3>Android</h3>
+<p>Current Pages build: <strong>build-17</strong> (version code 17), arm64-v8a.</p><p>On Android, <a href="https://github.com/ImranR98/Obtainium">Obtainium</a> can install updates from a Standard JSON file. Add this URL:</p>
+<pre><code>https://raw.githubusercontent.com/isyourbrainfoss/navigation/gh-pages/version.json</code></pre>
+<p><a class="button secondary" href="https://apps.obtainium.imranr.dev/redirect.html?r=obtainium://add/https://raw.githubusercontent.com/isyourbrainfoss/navigation/gh-pages/version.json">Add in Obtainium</a> (opens the app if it is already installed).</p>
+<p>GitHub Release asset URLs often fail on phones with “Connection closed while receiving data”. Prefer the JSON mirror above.</p><p><a class='button' href='https://raw.githubusercontent.com/isyourbrainfoss/navigation/gh-pages/navigation-arm64-v8a.apk'>Download APK</a></p><p class='hash'>SHA-256: <code>15243a95460d77e16cfce307b65401d027cc4d605f6f4868c5992eb7dd5e60ba</code></p></div>
+      <div class="card"><h3>Linux (Flatpak)</h3>
+<pre><code>flatpak remote-add --if-not-exists --user navigation \
+  https://isyourbrainfoss.github.io/navigation/navigation.flatpakrepo
+flatpak install --user navigation com.isyourbrainfoss.Navigation</code></pre><p>Default setup uses OpenStreetMap, Photon search, and public OSRM/Valhalla routing — no API key required. Offline tiles can be downloaded; offline routing still needs a network or a local routing engine.</p></div>
+    </div>
+    
+    </section>
+    
+    <footer>
+      <p>Source: <a href="https://github.com/isyourbrainfoss/navigation">github.com/isyourbrainfoss/navigation</a>. This is a personal project page, not a store listing.</p>
+    </footer>
+  </div>
 </body>
 </html>
