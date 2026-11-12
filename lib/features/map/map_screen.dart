@@ -33,6 +33,7 @@ import 'widgets/glass.dart';
 import 'widgets/map_controls.dart';
 import 'widgets/place_peek.dart';
 import 'widgets/speed_capsule.dart';
+import 'widgets/tiles_failing_banner.dart';
 import 'widgets/user_puck.dart';
 import 'widgets/voice_status.dart';
 
@@ -1102,7 +1103,7 @@ class _MapScreenState extends ConsumerState<MapScreen>
               builder: (context, failing, _) => failing
                   ? const Padding(
                       padding: EdgeInsets.only(top: 8),
-                      child: _TilesOfflineBanner(),
+                      child: TilesFailingBanner(),
                     )
                   : const SizedBox.shrink(),
             ),
@@ -1410,37 +1411,6 @@ class _RecenterPill extends StatelessWidget {
       onPressed: onPressed,
       icon: const Icon(Icons.navigation),
       label: const Text('Re-center'),
-    );
-  }
-}
-
-class _TilesOfflineBanner extends StatelessWidget {
-  const _TilesOfflineBanner();
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Material(
-      borderRadius: BorderRadius.circular(12),
-      color: theme.colorScheme.errorContainer,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        child: Row(
-          children: [
-            Icon(Icons.cloud_off, color: theme.colorScheme.onErrorContainer),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                'Can\'t load the map — no internet connection? '
-                'Places you have already viewed still show.',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onErrorContainer,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
