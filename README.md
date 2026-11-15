@@ -41,14 +41,29 @@ APKs are also attached to [GitHub Releases](https://github.com/isyourbrainfoss/n
 
 ### Linux (Flatpak — recommended)
 
+Navigation is published for **x86_64** and **aarch64** in the signed
+[isyourbrainfoss Flatpak repository](https://isyourbrainfoss.github.io/flatpak/) (branch `stable`):
+
 ```bash
-flatpak remote-add --if-not-exists --user navigation \
-  https://isyourbrainfoss.github.io/navigation/navigation.flatpakrepo
-flatpak install --user navigation com.isyourbrainfoss.Navigation
+flatpak remote-add --user --if-not-exists isyourbrainfoss \
+  https://isyourbrainfoss.github.io/flatpak/isyourbrainfoss.flatpakrepo
+flatpak install --user isyourbrainfoss com.isyourbrainfoss.Navigation
 flatpak run com.isyourbrainfoss.Navigation
 ```
 
-CI publishes the ostree repo under `gh-pages/repo` on every push to `main`. Single-file `.flatpak` bundles are attached to releases when available.
+**Moving from the old remote** (`navigation`, unsigned; it keeps updating until 2027-01-15). Your data
+in `~/.var/app/com.isyourbrainfoss.Navigation` is kept:
+
+```bash
+flatpak remote-add --user --if-not-exists isyourbrainfoss \
+  https://isyourbrainfoss.github.io/flatpak/isyourbrainfoss.flatpakrepo
+flatpak install --user --reinstall isyourbrainfoss com.isyourbrainfoss.Navigation
+flatpak remote-delete --user navigation
+```
+
+CI attaches single-file `.flatpak` bundles (+ `.sha256`) to each `build-N` release and notifies the
+shared repo, which signs and serves them. The old unsigned repo under `gh-pages/repo` is still updated
+during the transition.
 
 **Build Flatpak locally:**
 
