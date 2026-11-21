@@ -3,13 +3,22 @@ name: Linux Flatpak Release
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: write
 
+# One toolchain for this repo. 3.50.x ships FlViewRendererSubsurface, which
+# deadlocks on Phosh/phoc (flutter#196529, #196663, #195822). Stay on 3.47.8
+# until a stable release with that fix is verified on the Fairphone 5.
+env:
+  FLUTTER_VERSION: "3.47.8"
+
+# PR runs get their own group so they never cancel a main publish.
 concurrency:
-  group: flatpak-pages
+  group: flatpak-pages-${{ github.event_name == 'pull_request' && github.ref || 'main' }}
   cancel-in-progress: true
 
 jobs:
@@ -36,6 +45,7 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
 
       - name: Build Flatpak (x86_64)
@@ -44,6 +54,20 @@ jobs:
         run: |
           mkdir -p "$REPO_DIR"
           ./flatpak/build-flatpak.sh x86_64
+
+      - name: Reject Wayland subsurface renderer
+        run: |
+          flutter --version
+          lib="build/linux/x64/release/bundle/lib/libflutter_linux_gtk.so"
+          if [ ! -f "$lib" ]; then
+            echo "::error::Missing $lib"
+            exit 1
+          fi
+          if strings "$lib" | grep -q FlViewRendererSubsurface; then
+            echo "::error::$lib contains FlViewRendererSubsurface (Flutter 3.50 Wayland renderer). Refusing the bundle."
+            exit 1
+          fi
+          echo "OK: no FlViewRendererSubsurface in $lib"
 
       - name: Upload x86_64 repo
         uses: actions/upload-artifact@v4
@@ -80,7 +104,7 @@ jobs:
       - name: Set up Flutter
         run: |
           FLUTTER_ROOT="${RUNNER_TOOL_CACHE}/flutter"
-          git clone https://github.com/flutter/flutter.git -b stable --depth 1 "$FLUTTER_ROOT"
+          git clone https://github.com/flutter/flutter.git -b "$FLUTTER_VERSION" --depth 1 "$FLUTTER_ROOT"
           echo "${FLUTTER_ROOT}/bin" >> "$GITHUB_PATH"
           export PATH="${FLUTTER_ROOT}/bin:$PATH"
           flutter config --no-analytics
@@ -98,6 +122,20 @@ jobs:
           REPO_DIR: ${{ github.workspace }}/flatpak-pages-repo
         run: ./flatpak/build-flatpak.sh aarch64
 
+      - name: Reject Wayland subsurface renderer
+        run: |
+          flutter --version
+          lib="build/linux/arm64/release/bundle/lib/libflutter_linux_gtk.so"
+          if [ ! -f "$lib" ]; then
+            echo "::error::Missing $lib"
+            exit 1
+          fi
+          if strings "$lib" | grep -q FlViewRendererSubsurface; then
+            echo "::error::$lib contains FlViewRendererSubsurface (Flutter 3.50 Wayland renderer). Refusing the bundle."
+            exit 1
+          fi
+          echo "OK: no FlViewRendererSubsurface in $lib"
+
       - name: Upload combined repo
         uses: actions/upload-artifact@v4
         with:
@@ -111,6 +149,9 @@ jobs:
           path: flatpak/com.isyourbrainfoss.Navigation-aarch64.flatpak
 
   publish:
+    # Pull requests build artifacts only. workflow_dispatch on a non-main ref
+    # must not deploy or dispatch either.
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     needs: build-aarch64
     runs-on: ubuntu-latest
     steps:
